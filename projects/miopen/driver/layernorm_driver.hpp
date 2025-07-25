@@ -521,11 +521,13 @@ int LayerNormDriver<T>::RunBackwardCPU()
 template <typename T>
 double LayerNormDriver<T>::GetTolerance()
 {
-    // Take the greater of twice a random walk of floating point errors in the accumulator type or one floating point error in the buffer type
-    auto mantissa_bits   = std::is_same<T, float>::value ? 23 :
-                           std::is_same<T, half_float::half>::value ? 10 :
-                           7;
-    auto tolerance       = std::max(2.0 * std::sqrt(in.GetSize()) / (1 << 23), 1.0 / (1 << mantissa_bits));
+    // Take the greater of twice a random walk of floating point errors in the accumulator type or
+    // one floating point error in the buffer type
+    auto mantissa_bits = std::is_same<T, float>::value              ? 23
+                         : std::is_same<T, half_float::half>::value ? 10
+                                                                    : 7;
+    auto tolerance =
+        std::max(2.0 * std::sqrt(in.GetSize()) / (1 << 23), 1.0 / (1 << mantissa_bits));
     return tolerance;
 }
 

@@ -33,12 +33,10 @@
 #include "random.hpp"
 #include "tensor_driver.hpp"
 #include "timer.hpp"
-#include <algorithm>
 #include <cfloat>
 #include <cstdlib>
 #include <memory>
 #include <miopen/tensor.hpp>
-#include <numeric>
 #include <vector>
 
 template <typename Tgpu, typename Tcheck>
@@ -140,7 +138,7 @@ int32_t mloT5LayerNormBackwardRunHost(miopenTensorDescriptor_t dyDesc,
 }
 
 template <typename Tgpu, typename Tcheck>
-int32_t mloT5LayerNormBackckwardweightRunHost(
+int32_t mloT5LayerNormBackwardweightRunHost(
     miopenTensorDescriptor_t dyDesc, Tgpu* dy, Tgpu* x, Tcheck* rstdhost, Tcheck* dwhost)
 {
     auto dims         = miopen::deref(dyDesc).GetLengths();
@@ -385,7 +383,7 @@ int T5LayerNormDriver<Tgpu, Tref>::AllocateBuffersAndCopy()
     if(x_dev->ToGPU(GetStream(), x.data()) != 0)
         std::cerr << "Error copying (x) to GPU, size: " << x_dev->GetSize() << std::endl;
     if(dy_dev->ToGPU(GetStream(), dy.data()) != 0)
-        std::cerr << "Error copying (dy) to GPU, size: " << x_dev->GetSize() << std::endl;
+        std::cerr << "Error copying (dy) to GPU, size: " << dy_dev->GetSize() << std::endl;
 
     for(int i = 0; i < weight_sz; i++)
     {
@@ -540,7 +538,7 @@ int T5LayerNormDriver<Tgpu, Tref>::RunBackwardCPU()
     mloT5LayerNormBackwardRunHost<Tgpu, Tref>(
         dyDesc, dy.data(), x.data(), weight.data(), rstdhost.data(), dxhost.data(), mode);
 
-    mloT5LayerNormBackckwardweightRunHost<Tgpu, Tref>(
+    mloT5LayerNormBackwardweightRunHost<Tgpu, Tref>(
         dyDesc, dy.data(), x.data(), rstdhost.data(), dwhost.data());
 
     return miopenStatusSuccess;

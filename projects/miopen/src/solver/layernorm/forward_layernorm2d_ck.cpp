@@ -25,11 +25,14 @@
  *******************************************************************************/
 
 #include <miopen/env.hpp>
+#include <miopen/generic_search.hpp>
 #include <miopen/layernorm.hpp>
 #include <miopen/layernorm/solvers.hpp>
 #include <miopen/layernorm/invoke_params.hpp>
 #if MIOPEN_USE_COMPOSABLEKERNEL
 #include <miopen/kernels/ck_header_only/layernorm/normalization_fwd.hpp>
+#include <miopen/conv/problem_description.hpp>
+#include <miopen/solver/implicitgemm_ck_util.hpp>
 #include <miopen/solver/ck_utility_common.hpp>
 #endif
 MIOPEN_DECLARE_ENV_VAR_BOOL(MIOPEN_DEBUG_LAYERNORM2DCKFORWARD_CONV_CK_LN)
@@ -92,14 +95,8 @@ struct CKArgs
     CKArgs(CKArgs&&)      = default;
     CKArgs& operator=(const CKArgs&) = default;
 
-    template <typename LNPtr>
-    auto MakeArgPtr(const LNPtr& ln_ptr,
-                    ConstData_t x,
-                    ConstData_t weight,
-                    ConstData_t bias,
-                    Data_t y,
-                    Data_t mean,
-                    Data_t rstd) const
+    template <typename LNPtr, typename LNParams>
+    auto MakeArgPtr(const LNPtr& ln_ptr, const LNParams& data_context) const
     {
         return ln_ptr->MakeArgumentPointer(xyLengths,
                                            xyStrides,
@@ -110,19 +107,19 @@ struct CKArgs
                                            rstdStrides,
                                            {1},
                                            epsilon,
-                                           x,
-                                           weight,
-                                           bias,
-                                           y,
-                                           mean,
-                                           rstd,
+                                           data_context.x,
+                                           data_context.weight,
+                                           data_context.bias,
+                                           data_context.y,
+                                           data_context.mean,
+                                           data_context.rstd,
                                            ck::tensor_operation::element_wise::PassThrough{});
     }
 
     template <typename LNPtr>
     bool IsSupportedBy(const LNPtr& ln_ptr) const
     {
-        auto arg_ptr = MakeArgPtr(ln_ptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
+        auto arg_ptr = MakeArgPtr(ln_ptr, miopen::layernorm::InvokeParams{});
         return ln_ptr->IsSupportedArgument(arg_ptr.get());
     }
 
@@ -139,6 +136,74 @@ struct CKArgs
     float epsilon;
 };
 } // namespace
+
+template <typename XDataType,
+          typename GammaDataType,
+          typename BetaDataType,
+          typename YDataType,
+          typename SaveMeanInvStdDataType>
+void PerformanceConfigLayernorm2DCKForward::Init(
+    const miopen::layernorm::ProblemDescription& problem)
+{
+    const auto& args       = CKArgs{problem};
+    const auto ln_fwd_ptrs = DeviceOpLnFwdPtrs<XDataType,
+                                               GammaDataType,
+                                               BetaDataType,
+                                               YDataType,
+                                               SaveMeanInvStdDataType>::GetInstances();
+    if(ln_fwd_ptrs.empty())
+    {
+        MIOPEN_THROW(miopenStatusInternalError, "Ln2DCKFwd ln_fwd_ptrs empty");
+    }
+
+    for(const auto& it : ln_fwd_ptrs)
+    {
+        auto argument_ptr = it->MakeArgumentPointer(args.xyLengths,
+                                                    args.xyStrides,
+                                                    args.gammaStrides,
+                                                    args.betaStrides,
+                                                    args.xyStrides,
+                                                    args.meanStrides,
+                                                    args.rstdStrides,
+                                                    {1},
+                                                    args.epsilon,
+                                                    nullptr,
+                                                    nullptr,
+                                                    nullptr,
+                                                    nullptr,
+                                                    nullptr,
+                                                    nullptr,
+                                                    PassThrough{});
+        if(it->IsSupportedArgument(argument_ptr.get()))
+        {
+            valid_kernels.push_back(it->GetTypeString());
+        }
+    }
+
+    if(valid_kernels.empty())
+    {
+        MIOPEN_THROW(miopenStatusInternalError, "Ln2DCKFwd valid_kernels empty");
+    }
+
+    index     = 0;
+    kernel_id = valid_kernels[0];
+}
+
+template <typename XDataType,
+          typename GammaDataType,
+          typename BetaDataType,
+          typename YDataType,
+          typename SaveMeanInvStdDataType>
+bool PerformanceConfigLayernorm2DCKForward::CheckIsSupportCkArgs(
+    const miopen::layernorm::ProblemDescription& problem) const
+{
+    return IsCKArgsSupported<DeviceOpLnFwdPtrs<XDataType,
+                                               GammaDataType,
+                                               BetaDataType,
+                                               YDataType,
+                                               SaveMeanInvStdDataType>,
+                             CKArgs>(problem, kernel_id);
+}
 
 template <typename DeviceOpType>
 bool CheckCKApplicability(const miopen::layernorm::ProblemDescription& problem)
@@ -160,49 +225,115 @@ typename LnPtrsType::iterator FindLnPtr(LnPtrsType& ln_ptrs,
         return ln_args.IsSupportedBy(ln_ptrs);
     });
 }
-
-template <typename DeviceOpType, typename CKArgsType, typename CastType>
-ConvSolution MakeInvokerFactory([[maybe_unused]] const ExecutionContext& context,
-                                const miopen::layernorm::ProblemDescription& problem)
-{
-    auto ln_ptr      = DeviceOpType::GetInstances();
-    auto ln_ptr_iter = FindLnPtr(ln_ptr, problem);
-
-    if(ln_ptr_iter == ln_ptr.end())
-    {
-        MIOPEN_LOG_E("Layernorm kernel does not exist.");
-        return {miopenStatusInvalidValue};
-    }
-
-    ConvSolution result;
-    result.invoker_factory =
-        [ck_args   = CKArgsType{problem},
-         sh_ln_ptr = std::shared_ptr{std::move(*ln_ptr_iter)}](const std::vector<Kernel>&) mutable {
-            return [ck_args = std::move(ck_args), sh_ln_ptr = std::move(sh_ln_ptr)](
-                       const Handle& handle, const AnyInvokeParams& primitive_parameters) {
-                const auto& data_ctx = primitive_parameters.CastTo<CastType>();
-                auto argument_ptr    = ck_args.MakeArgPtr(sh_ln_ptr,
-                                                       data_ctx.x,
-                                                       data_ctx.weight,
-                                                       data_ctx.bias,
-                                                       data_ctx.y,
-                                                       data_ctx.mean,
-                                                       data_ctx.rstd);
-                auto invoker_ptr     = sh_ln_ptr->MakeInvokerPointer();
-
-                const auto enable_profiling = handle.IsProfilingEnabled();
-                float elapsed_time =
-                    invoker_ptr->Run(argument_ptr.get(), {handle.GetStream(), enable_profiling});
-                if(enable_profiling)
-                {
-                    handle.ResetKernelTime();
-                    handle.AccumKernelTime(elapsed_time);
-                }
-            };
-        };
-    return result;
-}
 #endif
+
+void PerformanceConfigLayernorm2DCKForward::HeuristicInit(
+    const miopen::layernorm::ProblemDescription& problem)
+{
+#if !MIOPEN_BACKEND_HIP || !MIOPEN_USE_COMPOSABLEKERNEL
+    std::ignore = problem;
+#else
+    switch(problem.GetXDesc().GetType())
+    {
+    case miopenHalf: Init<F16, F16, F16, F16, F16>(problem); break;
+    case miopenFloat: Init<F32, F32, F32, F32, F32>(problem); break;
+    case miopenBFloat16:
+    case miopenDouble:
+    case miopenFloat8_fnuz:
+    case miopenBFloat8_fnuz:
+    case miopenInt8:
+    case miopenInt32:
+    case miopenInt64:
+    default: MIOPEN_THROW("Unsupported datatype");
+    }
+#endif
+}
+
+bool PerformanceConfigLayernorm2DCKForward::SetNextValue(
+    const miopen::layernorm::ProblemDescription& problem)
+{
+#if !MIOPEN_BACKEND_HIP || !MIOPEN_USE_COMPOSABLEKERNEL
+    std::ignore = problem;
+    return false;
+#else
+    if(valid_kernels.empty())
+    {
+        HeuristicInit(problem);
+        if(valid_kernels.empty())
+        {
+            MIOPEN_THROW(miopenStatusInternalError, "Ln2DCKFwd valid_kernels empty");
+        }
+        return true;
+    }
+    if(index + 1 < valid_kernels.size())
+    {
+        ++index;
+        kernel_id = valid_kernels[index];
+        return true;
+    }
+    return false;
+#endif
+}
+
+bool PerformanceConfigLayernorm2DCKForward::IsValidValue() const
+{
+    return index >= 0 && index < valid_kernels.size();
+}
+
+bool PerformanceConfigLayernorm2DCKForward::IsValid(
+    const ExecutionContext&, const miopen::layernorm::ProblemDescription& problem) const
+{
+#if !MIOPEN_BACKEND_HIP || !MIOPEN_USE_COMPOSABLEKERNEL
+    std::ignore = problem;
+    return false;
+#else
+    switch(problem.GetXDesc().GetType())
+    {
+    case miopenHalf: return CheckIsSupportCkArgs<F16, F16, F16, F16, F16>(problem);
+    case miopenFloat: return CheckIsSupportCkArgs<F32, F32, F32, F32, F32>(problem);
+    case miopenBFloat16:
+    case miopenDouble:
+    case miopenFloat8_fnuz:
+    case miopenBFloat8_fnuz:
+    case miopenInt8:
+    case miopenInt32:
+    case miopenInt64:
+    default: MIOPEN_THROW("Unsupported datatype");
+    }
+    return false;
+#endif
+}
+
+bool PerformanceConfigLayernorm2DCKForward::operator==(
+    const PerformanceConfigLayernorm2DCKForward& other) const
+{
+    return kernel_id == other.kernel_id;
+}
+
+PerformanceConfigLayernorm2DCKForward Layernorm2DCKForward::GetDefaultPerformanceConfig(
+    const ExecutionContext&, const miopen::layernorm::ProblemDescription& problem) const
+{
+    PerformanceConfigLayernorm2DCKForward config;
+    config.HeuristicInit(problem);
+    MIOPEN_LOG_I(config.ToString());
+    return config;
+}
+
+bool Layernorm2DCKForward::IsValidPerformanceConfig(
+    const ExecutionContext& context,
+    const miopen::layernorm::ProblemDescription& problem,
+    const PerformanceConfigLayernorm2DCKForward& config) const
+{
+    return config.IsValid(context, problem);
+}
+
+PerformanceConfigLayernorm2DCKForward
+Layernorm2DCKForward::Search(const ExecutionContext& context,
+                             const miopen::layernorm::ProblemDescription& problem,
+                             const AnyInvokeParams& invoke_context) const
+{
+    return GenericSearch(*this, context, problem, invoke_context);
+}
 
 bool IsRank2Dim1(const miopen::layernorm::ProblemDescription& problem)
 {
@@ -232,7 +363,7 @@ bool Layernorm2DCKForward::IsApplicable(
     switch(problem.GetXDesc().GetType())
     {
     case miopenHalf:
-        return CheckCKApplicability<DeviceOpLnFwdPtrs<F16, F16, F16, F16, F32>>(problem);
+        return CheckCKApplicability<DeviceOpLnFwdPtrs<F16, F16, F16, F16, F16>>(problem);
     case miopenFloat:
         return CheckCKApplicability<DeviceOpLnFwdPtrs<F32, F32, F32, F32, F32>>(problem);
     case miopenBFloat16:
@@ -249,19 +380,20 @@ bool Layernorm2DCKForward::IsApplicable(
 
 ConvSolution Layernorm2DCKForward::GetSolution(
     [[maybe_unused]] const ExecutionContext& context,
-    [[maybe_unused]] const miopen::layernorm::ProblemDescription& problem) const
+    [[maybe_unused]] const miopen::layernorm::ProblemDescription& problem,
+    [[maybe_unused]] const PerformanceConfigLayernorm2DCKForward& config) const
 {
 #if MIOPEN_USE_COMPOSABLEKERNEL
     switch(problem.GetXDesc().GetType())
     {
     case miopenHalf:
-        return MakeInvokerFactory<DeviceOpLnFwdPtrs<F16, F16, F16, F16, F32>,
-                                  CKArgs,
-                                  miopen::layernorm::InvokeParams>(context, problem);
+        return InitAnyInvokerFactory<DeviceOpLnFwdPtrs<F16, F16, F16, F16, F16>,
+                                     CKArgs,
+                                     miopen::layernorm::InvokeParams>(problem, config.kernel_id);
     case miopenFloat:
-        return MakeInvokerFactory<DeviceOpLnFwdPtrs<F32, F32, F32, F32, F32>,
-                                  CKArgs,
-                                  miopen::layernorm::InvokeParams>(context, problem);
+        return InitAnyInvokerFactory<DeviceOpLnFwdPtrs<F32, F32, F32, F32, F32>,
+                                     CKArgs,
+                                     miopen::layernorm::InvokeParams>(problem, config.kernel_id);
     case miopenDouble:
     case miopenBFloat16:
     case miopenInt8:

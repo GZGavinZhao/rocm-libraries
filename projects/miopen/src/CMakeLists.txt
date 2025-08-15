@@ -867,6 +867,7 @@ if(MIOPEN_USE_COMPOSABLEKERNEL)
         # Use the aliased targets when we pull CK from /opt/rocm or other place on disc.
         set(MIOPEN_CK_LINK_FLAGS composable_kernel::device_conv_operations hip::host)
     endif()
+    set(MIOPEN_CK_LINK_FLAGS ${MIOPEN_CK_LINK_FLAGS} PARENT_SCOPE)
 endif()
 
 if(WIN32)

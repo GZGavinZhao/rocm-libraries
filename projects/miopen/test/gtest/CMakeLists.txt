@@ -61,6 +61,8 @@ function(add_gtest TEST_NAME TEST_CPP)
   if(rocblas_FOUND)
     target_link_libraries( ${TEST_NAME} $<BUILD_INTERFACE:roc::rocblas> )
   endif()
+  # Need to add CK link flags to access CK library functions for unit tests.
+  target_link_libraries(${TEST_NAME} ${MIOPEN_CK_LINK_FLAGS})
 
   # Workaround : change in rocm-cmake was causing linking error so had to add ${CMAKE_DL_LIBS}
   #               We can remove ${CMAKE_DL_LIBS} once root cause is identified.

@@ -20,14 +20,13 @@
 //   - bf16: ck::bhalf_t
 //   - s8: int8_t
 // - Epilogues: PassThrough, Scale, Bilinear
-#include "miopen/config.h"
+#include <miopen/config.h>
 #if MIOPEN_BACKEND_HIP && MIOPEN_USE_COMPOSABLEKERNEL
 #include <gtest/gtest.h>
 
-#include "miopen/solver/ck_utility_common.hpp"
-#include "ck/library/tensor_operation_instance/gpu/grouped_convolution_forward_bilinear.hpp"
-#include "ck/library/tensor_operation_instance/gpu/grouped_convolution_forward_scale.hpp"
-#include "ck/library/tensor_operation_instance/gpu/grouped_convolution_forward.hpp"
+#include <ck/library/tensor_operation_instance/gpu/grouped_convolution_forward.hpp>
+#include <ck/library/tensor_operation_instance/gpu/grouped_convolution_forward_bilinear.hpp>
+#include <ck/library/tensor_operation_instance/gpu/grouped_convolution_forward_scale.hpp>
 
 namespace miopen::unit_test {
 namespace {

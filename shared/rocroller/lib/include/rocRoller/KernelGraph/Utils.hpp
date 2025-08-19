@@ -30,6 +30,7 @@
 #include <optional>
 
 #include <rocRoller/Expression.hpp>
+#include <rocRoller/KernelGraph/Colouring.hpp>
 #include <rocRoller/KernelGraph/KernelGraph.hpp>
 #include <rocRoller/KernelGraph/Visitors.hpp>
 
@@ -56,16 +57,6 @@ namespace rocRoller
 
         private:
             KernelGraphPtr m_graph;
-        };
-
-        // Return value of colourByUnrollValue.  A colour-mapping is...
-        struct UnrollColouring
-        {
-            std::map<int, std::map<int, int>>
-                operationColour; //< Mapping: operation tag to colour-mapping.
-            std::map<int, std::map<int, int>>
-                          coordinateColour; //< Mapping: coordinate tag to colour-mapping.
-            std::set<int> separators; //< Separator edges in the control graph
         };
 
         std::string toString(UnrollColouring const&);

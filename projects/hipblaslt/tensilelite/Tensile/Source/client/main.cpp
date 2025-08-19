@@ -583,7 +583,7 @@ int main(int argc, const char* argv[])
     using namespace TensileLite::Client;
 
     auto args = parse_args(argc, argv);
-
+    std::cout << "FEROZ:DEBUG" << std::endl;
     // Set srand
     unsigned int seed = args["init-seed"].as<unsigned int>();
     if(seed == 0)

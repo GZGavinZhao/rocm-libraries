@@ -34,8 +34,10 @@
 #include <vector>
 
 #include <hip/hip_runtime.h>
-#include <rocm_smi/rocm_smi.h>
-#include <rocm_smi/rocm_smi64Config.h>
+//#include <rocm_smi/rocm_smi.h>
+//#include <rocm_smi/rocm_smi64Config.h>
+#include <amd_smi/amdsmi.h>
+#include <amd_smi/amd_smiConfig.h>
 
 namespace TensileLite
 {
@@ -51,12 +53,13 @@ namespace TensileLite
  */
         class HardwareMonitor
         {
+			static HardwareMonitor* hardwareMonitorPtr;
         public:
             /** Translates the Hip device index into the corresponding device index for
    * ROCm-SMI. */
-            static uint32_t GetROCmSMIIndex(int hipDeviceIndex);
+            uint32_t GetROCmSMIIndex(int hipDeviceIndex);
 
-            using rsmi_temperature_type_t = int;
+            using amdsmi_temperature_type_t = int;
             using clock                   = std::chrono::steady_clock;
 
             // Monitor at the maximum possible rate.
@@ -66,14 +69,14 @@ namespace TensileLite
 
             ~HardwareMonitor();
 
-            void addTempMonitor(rsmi_temperature_type_t   sensorType = 0,
-                                rsmi_temperature_metric_t metric     = RSMI_TEMP_CURRENT);
-            void addClockMonitor(rsmi_clk_type_t clockType);
+            void addTempMonitor(amdsmi_temperature_type_t   sensorType = 0,
+                                amdsmi_temperature_metric_t metric     = AMDSMI_TEMP_CURRENT);
+            void addClockMonitor(amdsmi_clk_type_t clockType);
             void addFanSpeedMonitor(uint32_t sensorIndex = 0);
 
-            double getAverageTemp(rsmi_temperature_type_t   sensorIndex = 0,
-                                  rsmi_temperature_metric_t metric      = RSMI_TEMP_CURRENT);
-            double getAverageClock(rsmi_clk_type_t clockType);
+            double getAverageTemp(amdsmi_temperature_type_t   sensorIndex = 0,
+                                  amdsmi_temperature_metric_t metric      = AMDSMI_TEMP_CURRENT);
+            double getAverageClock(amdsmi_clk_type_t clockType);
             double getAverageFanSpeed(uint32_t sensorIndex = 0);
             int    getDeviceIndex()
             {
@@ -140,15 +143,18 @@ namespace TensileLite
 
             int      m_hipDeviceIndex;
             uint32_t m_smiDeviceIndex;
+			amdsmi_socket_handle* m_socketHandle;
+			amdsmi_processor_handle* m_processor_handle;
 
             size_t m_dataPoints;
 
             uint16_t m_XCDCount;
 
-            std::vector<std::tuple<rsmi_temperature_type_t, rsmi_temperature_metric_t>> m_tempMetrics;
-            std::vector<int64_t>                                                        m_tempValues;
+            std::vector<std::tuple<amdsmi_temperature_type_t, amdsmi_temperature_metric_t>> m_tempMetrics;
+            std::vector<int64_t> m_tempValues;
 
-            std::vector<rsmi_clk_type_t> m_clockMetrics;
+            //std::vector<rsmi_clk_type_t> m_clockMetrics;
+			std::vector<amdsmi_clk_type_t>m_clockMetrics;
             std::vector<uint64_t>        m_clockValues;
 
             std::vector<uint32_t> m_fanMetrics;

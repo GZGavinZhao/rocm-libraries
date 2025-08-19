@@ -32,22 +32,27 @@ endif()
 
 
 # For some reason the *_DIR variables have inconsistent values between Tensile and rocBLAS.  Search various paths.
-find_path(ROCM_SMI_ROOT "include/rocm_smi/rocm_smi.h"
+#find_path(ROCM_SMI_ROOT "include/rocm_smi/rocm_smi.h"
+find_path(ROCM_SMI_ROOT "include/amd_smi/amdsmi.h"
     PATHS "${ROCM_ROOT}" "${HIP_DIR}/../../../.." "${HIP_DIR}/../../.."
-    PATH_SUFFIXES "rocm_smi"
+    #PATH_SUFFIXES "rocm_smi"
+    PATH_SUFFIXES "amd_smi"
     )
 mark_as_advanced(ROCM_SMI_ROOT)
 
-find_library(ROCM_SMI_LIBRARY rocm_smi64
+#find_library(ROCM_SMI_LIBRARY rocm_smi64
+find_library(ROCM_SMI_LIBRARY amd_smi
     PATHS "${ROCM_SMI_ROOT}/lib")
 mark_as_advanced(ROCM_SMI_LIBRARY)
 
 include( FindPackageHandleStandardArgs )
 find_package_handle_standard_args( ROCmSMI DEFAULT_MSG ROCM_SMI_LIBRARY ROCM_SMI_ROOT )
 
-add_library(rocm_smi SHARED IMPORTED)
+#add_library(rocm_smi SHARED IMPORTED)
+add_library(amd_smi SHARED IMPORTED)
 
-set_target_properties(rocm_smi PROPERTIES
+#set_target_properties(rocm_smi PROPERTIES
+set_target_properties(amd_smi PROPERTIES
     INTERFACE_INCLUDE_DIRECTORIES "${ROCM_SMI_ROOT}/include"
     IMPORTED_LOCATION "${ROCM_SMI_LIBRARY}"
     INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${ROCM_SMI_ROOT}/include")

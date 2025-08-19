@@ -49,9 +49,9 @@ namespace TensileLite
             m_monitor = std::make_shared<HardwareMonitor>(args["device-idx"].as<int>());
             m_monitor->addTempMonitor(0);
 
-            m_monitor->addClockMonitor(RSMI_CLK_TYPE_SYS);
-            m_monitor->addClockMonitor(RSMI_CLK_TYPE_SOC);
-            m_monitor->addClockMonitor(RSMI_CLK_TYPE_MEM);
+            m_monitor->addClockMonitor(AMDSMI_CLK_TYPE_SYS);
+            m_monitor->addClockMonitor(AMDSMI_CLK_TYPE_SOC);
+            m_monitor->addClockMonitor(AMDSMI_CLK_TYPE_MEM);
 
             m_monitor->addFanSpeedMonitor();
         }
@@ -91,9 +91,9 @@ namespace TensileLite
             m_reporter->report(ResultKey::DeviceIndex, m_monitor->getDeviceIndex());
             m_reporter->report(ResultKey::TempEdge, m_monitor->getAverageTemp(0));
 
-            m_reporter->report(ResultKey::ClockRateSys, m_monitor->getAverageClock(RSMI_CLK_TYPE_SYS));
-            m_reporter->report(ResultKey::ClockRateSOC, m_monitor->getAverageClock(RSMI_CLK_TYPE_SOC));
-            m_reporter->report(ResultKey::ClockRateMem, m_monitor->getAverageClock(RSMI_CLK_TYPE_MEM));
+            m_reporter->report(ResultKey::ClockRateSys, m_monitor->getAverageClock(AMDSMI_CLK_TYPE_SYS));
+            m_reporter->report(ResultKey::ClockRateSOC, m_monitor->getAverageClock(AMDSMI_CLK_TYPE_SOC));
+            m_reporter->report(ResultKey::ClockRateMem, m_monitor->getAverageClock(AMDSMI_CLK_TYPE_MEM));
 
             m_reporter->report(ResultKey::FanSpeedRPMs, m_monitor->getAverageFanSpeed());
             m_reporter->report(ResultKey::HardwareSampleCount, m_monitor->getSamples());

@@ -62,7 +62,8 @@ endif()
 target_include_directories(TensileClient PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include"
                                                 "${CMAKE_CURRENT_SOURCE_DIR}/../../../rocisa")
 
-target_link_libraries(TensileClient PRIVATE TensileHost Boost::program_options Boost::filesystem rocm_smi)
+#target_link_libraries(TensileClient PRIVATE TensileHost Boost::program_options Boost::filesystem rocm_smi amd_smi)
+target_link_libraries(TensileClient PRIVATE TensileHost Boost::program_options Boost::filesystem amd_smi)
 
 if(Tensile_ENABLE_MARKER)
     target_link_libraries(TensileClient PRIVATE -lroctx64)

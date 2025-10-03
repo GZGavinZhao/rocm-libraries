@@ -58,6 +58,7 @@ extern size_t      max_length_for_hipfftw_test;
 extern size_t      max_nbatch_for_hipfftw_test;
 extern size_t      max_io_gb_for_hipfftw_test;
 extern size_t      max_elementary_stride_for_hipfftw_test;
+extern size_t      max_num_arg_validation_tests_per_hipfftw_plan_type;
 extern std::string hipfftw_token_for_functional_test;
 
 #endif

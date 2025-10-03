@@ -67,6 +67,7 @@ double callback_prob_factor;
 size_t      max_length_for_hipfftw_test;
 size_t      max_nbatch_for_hipfftw_test;
 size_t      max_io_gb_for_hipfftw_test;
+size_t      max_num_arg_validation_tests_per_hipfftw_plan_type;
 size_t      max_elementary_stride_for_hipfftw_test;
 std::string hipfftw_token_for_functional_test;
 
@@ -336,6 +337,13 @@ int main(int argc, char* argv[])
                    "Maximum size of I/O to be considered in hipfftw tests in GiB")
         ->default_val(1) /* 1 GiB */
         ->check(CLI::PositiveNumber);
+
+    app.add_option(
+           "--max_num_arg_validation_tests_per_hipfftw_plan_type",
+           max_num_arg_validation_tests_per_hipfftw_plan_type,
+           "Maximum number of argument-validation tests per kind of hipfftw plan creation function")
+        ->default_val(256)
+        ->check(CLI::PositiveNumber);
     app.add_option("--max_elementary_stride_for_hipfftw_test",
                    max_elementary_stride_for_hipfftw_test,
                    "Maximum (elementary) stride to consider in hipfftw tests for non-packed I/O "
@@ -522,6 +530,7 @@ int main(int argc, char* argv[])
     // set any "unset" parameters of manual_params before initiating gtests
     // (makes the token reported by gtest less ambiguous)
     manual_params.validate();
+    std::cout << "Using random_seed = " << random_seed << std::endl;
 
     // extract remaining arguments for subsequent gtest initialization
     std::vector<std::string> remaining_args = app.remaining();
@@ -570,7 +579,6 @@ int main(int argc, char* argv[])
         }
     }
 
-    std::cout << "Using random_seed = " << random_seed << std::endl;
     std::cout << "half epsilon: " << half_epsilon << "\tsingle epsilon: " << single_epsilon
               << "\tdouble epsilon: " << double_epsilon << std::endl;
 
@@ -665,6 +673,7 @@ int main(int argc, char* argv[])
     std::cout << "single precision max l2 epsilon:     " << max_l2_eps_single << std::endl;
     std::cout << "double precision max l-inf epsilon: " << max_linf_eps_double << std::endl;
     std::cout << "double precision max l2 epsilon:     " << max_l2_eps_double << std::endl;
+    std::cout << "Used random_seed = " << random_seed << std::endl;
 
     hipfft_params::externally_managed_workareas.clear();
 

@@ -121,11 +121,12 @@ namespace
 
     // randomizers
     // Note: albeit not supported, ranks > 3 are "valid" arguments
-    // --> limiting rank value to max of 10 by default to avoid ridiculously long
+    // --> limiting rank value to max of 5 by default to avoid ridiculously long
     // lengths/batches possibly created in automated parameter generations;
+    // (can make calls to array_valid pretty time-consuming)
     template <bool validity_flag,
               int  min_rank          = validity_flag ? 1 : std::numeric_limits<int>::lowest(),
-              int  max_rank          = validity_flag ? 10 : 0,
+              int  max_rank          = validity_flag ? 5 : 0,
               std::enable_if_t<(min_rank <= max_rank) && (!validity_flag || min_rank > 0)
                                    && (validity_flag || max_rank <= 0),
                                bool> = true>
@@ -241,6 +242,11 @@ namespace
     {
         return element_list[get_random_idx(element_list.size())];
     }
+    template <typename T>
+    T get_random_element_in(const std::set<T>& element_set)
+    {
+        return *std::next(element_set.begin(), get_random_idx(element_set.size()));
+    }
 
     struct valid_values_cannot_be_created : std::runtime_error
     {
@@ -262,9 +268,15 @@ namespace
         {
             if(!vector_has_valid_values_as<int>(fwd_domain_nembed, fwd_domain_nembed.size(), 1))
                 throw valid_values_cannot_be_created();
-            if(std::count(fwd_domain_nembed.begin(), fwd_domain_nembed.end(), 1)
-               == fwd_domain_nembed.size())
-                throw valid_values_cannot_be_created();
+            if(std::count(fwd_domain_nembed.begin(), fwd_domain_nembed.end() - 1, 1)
+               == fwd_domain_nembed.size() - 1)
+            {
+                if(fwd_domain_nembed.back() <= (is_real_inplace ? 2 : 1))
+                {
+                    // only valid lengths are 1x1x...x1
+                    throw valid_values_cannot_be_created();
+                }
+            }
             if(is_real_inplace && fwd_domain_nembed.back() % 2 == 1)
                 throw valid_values_cannot_be_created();
         }
@@ -1378,33 +1390,23 @@ namespace
     std::vector<hipfftw_helper<prec>> test_scope_for_arg_validation_of_plan_dft_nd()
     {
         std::vector<hipfftw_helper<prec>> ret;
-        for(auto dft_kind : trans_type_range_full)
+        while(ret.size() < max_num_arg_validation_tests_per_hipfftw_plan_type)
         {
-            // cannot do anything but rank 1, 2, 3 with PLAN_DFT_ND
-            for(auto rank : {1, 2, 3})
-            {
-                for(auto placement : place_range)
-                {
-                    const ptrdiff_t max_len
-                        = std::min(static_cast<ptrdiff_t>(max_length_for_hipfftw_test),
-                                   find_threshold_length_for_byte_size<prec>(
-                                       max_byte_size_for_hipfftw_tests(), rank, is_real(dft_kind)));
-                    for(const auto& lengths :
-                        arg_validation_strictly_positive_vec_range(rank, max_len))
-                    {
-                        for(auto sign : arg_validation_sign_range(dft_kind))
-                        {
-                            for(auto flags : arg_validation_flags_range(dft_kind, rank))
-                            {
-                                hipfftw_helper<prec> helper_to_add;
-                                helper_to_add.set_creation_args(
-                                    dft_kind, rank, lengths, placement, sign, flags);
-                                ret.emplace_back(helper_to_add);
-                            }
-                        }
-                    }
-                }
-            }
+            const auto dft_kind = get_random_element_in(trans_type_range_full);
+            // only ranks 1-3 for plan_dft_nd functions
+            const auto      rank      = get_random_rank<valid_value, 1, 3>();
+            const auto      placement = get_random_element_in(place_range);
+            const ptrdiff_t max_len
+                = std::min(static_cast<ptrdiff_t>(max_length_for_hipfftw_test),
+                           find_threshold_length_for_byte_size<prec>(
+                               max_byte_size_for_hipfftw_tests(), rank, is_real(dft_kind)));
+            const auto lengths
+                = get_random_element_in(arg_validation_strictly_positive_vec_range(rank, max_len));
+            const auto sign  = get_random_element_in(arg_validation_sign_range(dft_kind));
+            const auto flags = get_random_element_in(arg_validation_flags_range(dft_kind, rank));
+            hipfftw_helper<prec> helper_to_add;
+            helper_to_add.set_creation_args(dft_kind, rank, lengths, placement, sign, flags);
+            ret.push_back(helper_to_add);
         }
         return ret;
     }
@@ -1413,39 +1415,29 @@ namespace
     std::vector<hipfftw_helper<prec>> test_scope_for_arg_validation_of_plan_dft()
     {
         std::vector<hipfftw_helper<prec>> ret;
-        for(auto dft_kind : trans_type_range_full)
+
+        while(ret.size() < max_num_arg_validation_tests_per_hipfftw_plan_type)
         {
-            for(auto rank : arg_validation_runtime_rank_range())
+            const auto dft_kind  = get_random_element_in(trans_type_range_full);
+            const auto rank      = get_random_element_in(arg_validation_runtime_rank_range());
+            const auto placement = get_random_element_in(place_range);
+            ptrdiff_t  max_len   = max_length_for_hipfftw_test;
+            if(rank_is_valid_for_hipfftw(rank))
             {
-                for(auto placement : place_range)
-                {
-                    ptrdiff_t max_len = max_length_for_hipfftw_test;
-                    if(rank_is_valid_for_hipfftw(rank))
-                    {
-                        max_len = std::min(
-                            max_len,
-                            find_threshold_length_for_byte_size<prec>(
-                                max_byte_size_for_hipfftw_tests(), rank, is_real(dft_kind)));
-                    }
-                    std::vector<std::vector<ptrdiff_t>> range_of_lengths
-                        = arg_validation_strictly_positive_vec_range(rank, max_len);
-                    // --> test for empty lengths, too (re-interpreted as a nullptr argument by hipfftw_helper)
-                    range_of_lengths.emplace_back(std::vector<ptrdiff_t>());
-                    for(const auto& lengths : range_of_lengths)
-                    {
-                        for(auto sign : arg_validation_sign_range(dft_kind))
-                        {
-                            for(auto flags : arg_validation_flags_range(dft_kind, rank))
-                            {
-                                hipfftw_helper<prec> helper_to_add;
-                                helper_to_add.set_creation_args(
-                                    dft_kind, rank, lengths, placement, sign, flags);
-                                ret.emplace_back(helper_to_add);
-                            }
-                        }
-                    }
-                }
+                max_len = std::min(max_len,
+                                   find_threshold_length_for_byte_size<prec>(
+                                       max_byte_size_for_hipfftw_tests(), rank, is_real(dft_kind)));
             }
+            std::vector<std::vector<ptrdiff_t>> range_of_lengths
+                = arg_validation_strictly_positive_vec_range(rank, max_len);
+            // --> test for empty lengths, too (re-interpreted as a nullptr argument by hipfftw_helper)
+            range_of_lengths.push_back(std::vector<ptrdiff_t>());
+            const auto lengths = get_random_element_in(range_of_lengths);
+            const auto sign    = get_random_element_in(arg_validation_sign_range(dft_kind));
+            const auto flags   = get_random_element_in(arg_validation_flags_range(dft_kind, rank));
+            hipfftw_helper<prec> helper_to_add;
+            helper_to_add.set_creation_args(dft_kind, rank, lengths, placement, sign, flags);
+            ret.push_back(helper_to_add);
         }
         return ret;
     }
@@ -1455,8 +1447,7 @@ namespace
     {
         std::vector<hipfftw_helper<prec>> ret;
         constexpr int batch_rank = 1; // nothing else possible via the *_many_dft* apis
-
-        auto get_random_elementary_stride = [](bool valid_and_supported_stride) {
+        auto          get_random_elementary_stride = [](bool valid_and_supported_stride) {
             static std::uniform_int_distribution<ptrdiff_t> stride_rng(
                 -max_elementary_stride_for_hipfftw_test, max_elementary_stride_for_hipfftw_test);
             auto ret = stride_rng(get_pseudo_rng());
@@ -1473,128 +1464,93 @@ namespace
             return dist_rng(get_pseudo_rng());
         };
 
-        for(auto dft_kind : trans_type_range_full)
+        while(ret.size() < max_num_arg_validation_tests_per_hipfftw_plan_type)
         {
-            for(auto rank : arg_validation_runtime_rank_range())
+
+            const auto dft_kind  = get_random_element_in(trans_type_range_full);
+            const auto rank      = get_random_element_in(arg_validation_runtime_rank_range());
+            const auto batches   = get_random_element_in(arg_validation_strictly_positive_vec_range(
+                batch_rank, max_nbatch_for_hipfftw_test));
+            const auto placement = get_random_element_in(place_range);
+            const bool is_real_ip = is_real(dft_kind) && placement == fft_placement_inplace;
+            ptrdiff_t  max_nembed = max_length_for_hipfftw_test;
+            if(rank_is_valid_for_hipfftw(rank) && batches[0] > 0)
             {
-                for(const auto& batches : arg_validation_strictly_positive_vec_range(
-                        batch_rank, max_nbatch_for_hipfftw_test))
+                max_nembed
+                    = std::min(max_nembed,
+                               find_threshold_length_for_byte_size<prec>(
+                                   max_byte_size_for_hipfftw_tests()
+                                       / (max_elementary_stride_for_hipfftw_test * batches[0]),
+                                   rank,
+                                   is_real(dft_kind)));
+            }
+            auto fwd_domain_nembed_range
+                = arg_validation_strictly_positive_vec_range(rank, max_nembed);
+            if(is_real_ip && rank_is_valid_for_hipfftw(rank))
+            {
+                // make the last entry of the valid fwd_domain_nembed in range even
+                // so that bwd_domain_nembed can be calculated
+                for(auto& tmp : fwd_domain_nembed_range)
                 {
-                    for(auto placement : place_range)
-                    {
-                        const bool is_real_ip
-                            = is_real(dft_kind) && placement == fft_placement_inplace;
-                        ptrdiff_t max_nembed = max_length_for_hipfftw_test;
-                        if(rank_is_valid_for_hipfftw(rank)
-                           && vector_has_valid_values_as<ptrdiff_t>(batches, batch_rank, 1))
-                        {
-                            max_nembed
-                                = std::min(max_nembed,
-                                           find_threshold_length_for_byte_size<prec>(
-                                               max_byte_size_for_hipfftw_tests()
-                                                   / (max_elementary_stride_for_hipfftw_test
-                                                      * product(batches.begin(), batches.end())),
-                                               rank,
-                                               is_real(dft_kind)));
-                        }
-                        auto fwd_domain_nembed_range
-                            = arg_validation_strictly_positive_vec_range(rank, max_nembed);
-                        if(is_real_ip && rank_is_valid_for_hipfftw(rank))
-                        {
-                            // make the last entry of the valid fwd_domain_nembed in range even
-                            // so that bwd_domain_nembed can be calculated
-                            for(auto& tmp : fwd_domain_nembed_range)
-                            {
-                                if(vector_has_valid_values_as<int>(tmp, rank, 1)
-                                   && tmp.back() % 2 == 1)
-                                    tmp.back()--;
-                            }
-                        }
-                        // --> test for empty lengths/strides, too
-                        fwd_domain_nembed_range.emplace_back(std::vector<ptrdiff_t>());
-                        for(const auto& fwd_domain_nembed : fwd_domain_nembed_range)
-                        {
-                            for(const auto& lengths : arg_validation_lengths_range_many_dft(
-                                    fwd_domain_nembed, is_real_ip))
-                            {
-                                for(const auto& bwd_domain_nembed :
-                                    arg_validation_bwd_domain_nembed_range_many_dft(
-                                        max_nembed,
-                                        fwd_domain_nembed,
-                                        lengths,
-                                        dft_kind,
-                                        placement))
-                                {
-                                    std::set<ptrdiff_t> istride_range
-                                        = {get_random_elementary_stride(!valid_value),
-                                           get_random_elementary_stride(valid_value)};
-                                    if(is_real_ip)
-                                        istride_range.insert(1);
-                                    for(auto istride : istride_range)
-                                    {
-                                        std::set<ptrdiff_t> ostride_range
-                                            = {get_random_elementary_stride(!valid_value),
-                                               get_random_elementary_stride(valid_value)};
-                                        if(placement == fft_placement_inplace && istride > 0)
-                                            ostride_range.insert(istride);
-
-                                        for(auto ostride : ostride_range)
-                                        {
-                                            const auto& inembed = is_fwd(dft_kind)
-                                                                      ? fwd_domain_nembed
-                                                                      : bwd_domain_nembed;
-                                            const auto& onembed = is_fwd(dft_kind)
-                                                                      ? bwd_domain_nembed
-                                                                      : fwd_domain_nembed;
-
-                                            const auto istrides
-                                                = compute_strides_from_nembed(inembed, istride);
-                                            const auto ostrides
-                                                = compute_strides_from_nembed(onembed, ostride);
-                                            const auto idist_range
-                                                = arg_validation_dist_range_many_dft(
-                                                    batches, inembed, istride, get_random_dist);
-                                            const auto odist_range
-                                                = arg_validation_dist_range_many_dft(
-                                                    batches, onembed, ostride, get_random_dist);
-
-                                            for(const auto& idist : idist_range)
-                                            {
-                                                for(const auto& odist : odist_range)
-                                                {
-                                                    for(auto sign :
-                                                        arg_validation_sign_range(dft_kind))
-                                                    {
-                                                        for(auto flags : arg_validation_flags_range(
-                                                                dft_kind, rank))
-                                                        {
-                                                            hipfftw_helper<prec> helper_to_add;
-                                                            helper_to_add.set_creation_args(
-                                                                dft_kind,
-                                                                rank,
-                                                                lengths,
-                                                                placement,
-                                                                sign,
-                                                                flags,
-                                                                istrides,
-                                                                ostrides,
-                                                                batch_rank,
-                                                                batches,
-                                                                idist,
-                                                                odist);
-                                                            ret.emplace_back(helper_to_add);
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    if(vector_has_valid_values_as<int>(tmp, rank, 1) && tmp.back() % 2 == 1)
+                        tmp.back()--;
                 }
             }
+            // --> test for empty lengths/strides, too
+            fwd_domain_nembed_range.emplace_back(std::vector<ptrdiff_t>());
+
+            ptrdiff_t max_len = max_length_for_hipfftw_test;
+            if(rank_is_valid_for_hipfftw(rank))
+            {
+                max_len = std::min(max_len,
+                                   find_threshold_length_for_byte_size<prec>(
+                                       max_byte_size_for_hipfftw_tests(), rank, is_real(dft_kind)));
+            }
+            std::vector<std::vector<ptrdiff_t>> range_of_lengths
+                = arg_validation_strictly_positive_vec_range(rank, max_len);
+            // --> test for empty lengths, too (re-interpreted as a nullptr argument by hipfftw_helper)
+            range_of_lengths.push_back(std::vector<ptrdiff_t>());
+            const auto fwd_domain_nembed = get_random_element_in(fwd_domain_nembed_range);
+            const auto lengths           = get_random_element_in(
+                arg_validation_lengths_range_many_dft(fwd_domain_nembed, is_real_ip));
+            const auto bwd_domain_nembed
+                = get_random_element_in(arg_validation_bwd_domain_nembed_range_many_dft(
+                    max_nembed, fwd_domain_nembed, lengths, dft_kind, placement));
+            std::set<ptrdiff_t> istride_range = {get_random_elementary_stride(!valid_value),
+                                                 get_random_elementary_stride(valid_value)};
+            if(is_real_ip)
+                istride_range.insert(1);
+            const auto          istride       = get_random_element_in(istride_range);
+            std::set<ptrdiff_t> ostride_range = {get_random_elementary_stride(!valid_value),
+                                                 get_random_elementary_stride(valid_value)};
+            if(placement == fft_placement_inplace && istride > 0)
+                ostride_range.insert(istride);
+            const auto  ostride  = get_random_element_in(ostride_range);
+            const auto& inembed  = is_fwd(dft_kind) ? fwd_domain_nembed : bwd_domain_nembed;
+            const auto& onembed  = is_fwd(dft_kind) ? bwd_domain_nembed : fwd_domain_nembed;
+            const auto  istrides = compute_strides_from_nembed(inembed, istride);
+            const auto  ostrides = compute_strides_from_nembed(onembed, ostride);
+            const auto  idist    = get_random_element_in(
+                arg_validation_dist_range_many_dft(batches, inembed, istride, get_random_dist));
+            const auto odist = get_random_element_in(
+                arg_validation_dist_range_many_dft(batches, onembed, ostride, get_random_dist));
+
+            const auto sign  = get_random_element_in(arg_validation_sign_range(dft_kind));
+            const auto flags = get_random_element_in(arg_validation_flags_range(dft_kind, rank));
+            hipfftw_helper<prec> helper_to_add;
+            helper_to_add.set_creation_args(dft_kind,
+                                            rank,
+                                            lengths,
+                                            placement,
+                                            sign,
+                                            flags,
+                                            istrides,
+                                            ostrides,
+                                            batch_rank,
+                                            batches,
+                                            idist,
+                                            odist);
+            ret.emplace_back(helper_to_add);
         }
         return ret;
     }

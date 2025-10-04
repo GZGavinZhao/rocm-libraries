@@ -324,19 +324,22 @@ namespace
 
     template <bool validity_flag>
     std::vector<ptrdiff_t>
-        get_random_bwd_domain_nembed(ptrdiff_t                     max_nembed,
+        get_random_bwd_domain_nembed(ptrdiff_t                     max_nembed_fwd_domain,
                                      const std::vector<ptrdiff_t>& fwd_domain_nembed,
                                      const std::vector<ptrdiff_t>& lengths,
                                      fft_transform_type            dft_type,
                                      fft_result_placement          placement)
     {
-        if(fwd_domain_nembed.size() != lengths.size())
+        if(!lengths.empty() && fwd_domain_nembed.size() != lengths.size())
             throw std::invalid_argument("fwd_domain_nembed.size() == lengths.size() required by "
-                                        "get_random_bwd_domain_nembed");
-        if(max_nembed <= 0)
-            throw std::invalid_argument("max_nembed > 0 required by get_random_bwd_domain_nembed");
+                                        "get_random_bwd_domain_nembed for non-empty lengths");
+        if(max_nembed_fwd_domain <= 0)
+            throw std::invalid_argument(
+                "max_nembed_fwd_domain > 0 required by get_random_bwd_domain_nembed");
         if constexpr(validity_flag)
         {
+            if(lengths.empty())
+                throw valid_values_cannot_be_created();
             if(!vector_has_valid_values_as<int>(fwd_domain_nembed, fwd_domain_nembed.size(), 1)
                || !vector_has_valid_values_as<int>(lengths, lengths.size(), 1))
                 throw valid_values_cannot_be_created();
@@ -351,10 +354,13 @@ namespace
             {
                 for(int dim_idx = 0; dim_idx < ret.size(); dim_idx++)
                 {
-                    auto min_nembed = lengths[dim_idx];
+                    ptrdiff_t max_nembed_for_dim = is_real(dft_type) && dim_idx == ret.size() - 1
+                                                       ? max_nembed_fwd_domain / 2 + 1
+                                                       : max_nembed_fwd_domain;
+                    auto      min_nembed         = lengths[dim_idx];
                     if(is_real(dft_type) && dim_idx == ret.size() - 1)
                         min_nembed = min_nembed / 2 + 1;
-                    if(min_nembed > max_nembed)
+                    if(min_nembed > max_nembed_for_dim)
                         throw valid_values_cannot_be_created();
                     if(placement == fft_placement_inplace)
                     {
@@ -370,14 +376,16 @@ namespace
                     }
                     else
                     {
-                        std::uniform_int_distribution<ptrdiff_t> nembed_rng(min_nembed, max_nembed);
+                        std::uniform_int_distribution<ptrdiff_t> nembed_rng(min_nembed,
+                                                                            max_nembed_for_dim);
                         ret[dim_idx] = nembed_rng(get_pseudo_rng());
                     }
                 }
             }
             else
             {
-                static std::uniform_int_distribution<ptrdiff_t> nembed_rng(-max_nembed, max_nembed);
+                std::uniform_int_distribution<ptrdiff_t> nembed_rng(-max_nembed_fwd_domain,
+                                                                    max_nembed_fwd_domain);
                 for(int dim_idx = 0; dim_idx < ret.size(); dim_idx++)
                 {
                     ret[dim_idx] = nembed_rng(get_pseudo_rng());
@@ -392,7 +400,9 @@ namespace
             for(auto dim = 0; dim < ret.size() && check; dim++)
             {
                 const auto min_nembed
-                    = dim == ret.size() - 1 && is_real_dft ? lengths[dim] / 2 + 1 : lengths[dim];
+                    = lengths.empty() ? 0
+                                      : (dim == ret.size() - 1 && is_real_dft ? lengths[dim] / 2 + 1
+                                                                              : lengths[dim]);
                 check = ret[dim] >= min_nembed && ret[dim] > 0;
                 if(placement == fft_placement_inplace && check)
                 {
@@ -409,19 +419,6 @@ namespace
         while(bwd_domain_nembed_are_valid() != validity_flag)
         {
             make_bwd_domain_nembed(); // try again
-        }
-        return ret;
-    }
-
-    std::vector<ptrdiff_t> compute_strides_from_nembed(const std::vector<ptrdiff_t>& nembed,
-                                                       ptrdiff_t elementary_stride)
-    {
-        std::vector<ptrdiff_t> ret(nembed.size());
-        if(nembed.size() > 0)
-        {
-            ret.back() = elementary_stride;
-            for(auto dim_idx = nembed.size() - 1; dim_idx-- > 0;)
-                ret[dim_idx] = ret[dim_idx + 1] * nembed[dim_idx + 1];
         }
         return ret;
     }
@@ -1080,12 +1077,13 @@ namespace
 
         // checks consistency between values for test parameters that may have
         // overlapping scopes/meaning, in some specific cases
-        bool can_be_tested(bool io_allocation_is_allowed = true) const
+        bool can_be_tested() const
         {
             if(!hipfftw_execution_io_args_are_well_defined(execution_io))
                 return false;
             if(!plan_helper.can_use_creation_options(creation_options))
                 return false;
+
             if(creation_placement() == fft_placement_inplace)
             {
                 if(creation_io_is_null.first != creation_io_is_null.second)
@@ -1114,19 +1112,24 @@ namespace
                    && is_execution_arg_null(fft_io::fft_io_out))
                     return false; // would be in-place at execution
             }
-            if(!io_allocation_is_allowed)
+            if(flags_are_valid_for_hipfftw(plan_helper.get_flags())
+               && !(plan_helper.get_flags() & FFTW_ESTIMATE))
             {
-                // do not allow SetUp to allocate
-                bool ret = creation_io_is_null.first
-                           && (creation_placement() == fft_placement_inplace
-                               || creation_io_is_null.second);
-                if(!use_creation_io_at_execution() && ret)
+                // I/O data pointers may be touched at creation. In that case,
+                // the I/O allocations must make sense and be large enough
+                try
                 {
-                    ret = is_execution_arg_null(fft_io::fft_io_in)
-                          && (execution_placement() == fft_placement_inplace
-                              || is_execution_arg_null(fft_io::fft_io_out));
+                    (void)plan_helper.get_data_byte_size(fft_io::fft_io_in);
+                    (void)plan_helper.get_data_byte_size(fft_io::fft_io_out);
                 }
-                return ret;
+                catch(const hipfftw_helper_num_elements_calc_exception& e)
+                {
+                    return false;
+                }
+                catch(...)
+                {
+                    throw; // escalate the unexpected exception
+                }
             }
             return true;
         }
@@ -1306,7 +1309,7 @@ namespace
     }
 
     std::vector<std::vector<ptrdiff_t>> arg_validation_bwd_domain_nembed_range_many_dft(
-        ptrdiff_t                     max_nembed,
+        ptrdiff_t                     max_nembed_fwd_domain,
         const std::vector<ptrdiff_t>& fwd_domain_nembed,
         const std::vector<ptrdiff_t>& lengths,
         fft_transform_type            dft_kind,
@@ -1315,11 +1318,11 @@ namespace
         std::vector<std::vector<ptrdiff_t>> ret;
 
         ret.emplace_back(get_random_bwd_domain_nembed<!valid_value>(
-            max_nembed, fwd_domain_nembed, lengths, dft_kind, placement));
+            max_nembed_fwd_domain, fwd_domain_nembed, lengths, dft_kind, placement));
         try
         {
             ret.emplace_back(get_random_bwd_domain_nembed<valid_value>(
-                max_nembed, fwd_domain_nembed, lengths, dft_kind, placement));
+                max_nembed_fwd_domain, fwd_domain_nembed, lengths, dft_kind, placement));
         }
         catch(const valid_values_cannot_be_created& e)
         {
@@ -1332,30 +1335,31 @@ namespace
         return ret;
     }
 
-    std::vector<std::vector<ptrdiff_t>>
-        arg_validation_dist_range_many_dft(const std::vector<ptrdiff_t>& batches,
-                                           const std::vector<ptrdiff_t>& nembed,
-                                           const ptrdiff_t&              stride,
-                                           ptrdiff_t (*random_dist_func)())
+    std::vector<ptrdiff_t> arg_validation_dist_range_many_dft(ptrdiff_t          nbatch,
+                                                              const io_nembed_t& io_nembed,
+                                                              fft_io             io,
+                                                              ptrdiff_t (*random_dist_func)())
     {
-        std::vector<std::vector<ptrdiff_t>> ret;
-        std::vector<ptrdiff_t>              to_add(batches.size());
-        if(batches.size() == 1 && !nembed.empty())
+        std::vector<ptrdiff_t>  ret;
+        ptrdiff_t               to_add;
+        const std::vector<int>& nembed
+            = io == fft_io::fft_io_in ? io_nembed.inembed : io_nembed.onembed;
+        int stride = io == fft_io::fft_io_in ? io_nembed.istride : io_nembed.ostride;
+        if(!nembed.empty())
         {
             // add a value that will always be valid for valid nembed and stride
-            to_add[0] = product(nembed.begin(), nembed.end()) * stride;
+            to_add = product(nembed.begin(), nembed.end()) * stride;
         }
         else
         {
-            for(auto& tmp : to_add)
-                tmp = random_dist_func();
+            to_add = random_dist_func();
         }
-        ret.emplace_back(to_add);
-        if(batches.size() == 1 && batches[0] > stride)
+        ret.push_back(to_add);
+        if(nbatch > 1)
+            ret.push_back(0);
+        if(nbatch > stride)
         {
-            // add an aliasing layout
-            to_add[0] = 1;
-            ret.emplace_back(to_add);
+            ret.push_back(1);
         }
 
         return ret;
@@ -1469,23 +1473,23 @@ namespace
 
             const auto dft_kind  = get_random_element_in(trans_type_range_full);
             const auto rank      = get_random_element_in(arg_validation_runtime_rank_range());
-            const auto batches   = get_random_element_in(arg_validation_strictly_positive_vec_range(
-                batch_rank, max_nbatch_for_hipfftw_test));
+            const auto nbatch    = get_random_element_in(arg_validation_strictly_positive_vec_range(
+                batch_rank, max_nbatch_for_hipfftw_test))[0];
             const auto placement = get_random_element_in(place_range);
             const bool is_real_ip = is_real(dft_kind) && placement == fft_placement_inplace;
-            ptrdiff_t  max_nembed = max_length_for_hipfftw_test;
-            if(rank_is_valid_for_hipfftw(rank) && batches[0] > 0)
+            ptrdiff_t  max_nembed_fwd_domain = max_length_for_hipfftw_test;
+            if(rank_is_valid_for_hipfftw(rank) && nbatch > 0)
             {
-                max_nembed
-                    = std::min(max_nembed,
+                max_nembed_fwd_domain
+                    = std::min(max_nembed_fwd_domain,
                                find_threshold_length_for_byte_size<prec>(
                                    max_byte_size_for_hipfftw_tests()
-                                       / (max_elementary_stride_for_hipfftw_test * batches[0]),
+                                       / (max_elementary_stride_for_hipfftw_test * nbatch),
                                    rank,
                                    is_real(dft_kind)));
             }
             auto fwd_domain_nembed_range
-                = arg_validation_strictly_positive_vec_range(rank, max_nembed);
+                = arg_validation_strictly_positive_vec_range(rank, max_nembed_fwd_domain);
             if(is_real_ip && rank_is_valid_for_hipfftw(rank))
             {
                 // make the last entry of the valid fwd_domain_nembed in range even
@@ -1496,60 +1500,52 @@ namespace
                         tmp.back()--;
                 }
             }
-            // --> test for empty lengths/strides, too
-            fwd_domain_nembed_range.emplace_back(std::vector<ptrdiff_t>());
-
-            ptrdiff_t max_len = max_length_for_hipfftw_test;
-            if(rank_is_valid_for_hipfftw(rank))
+            if(fwd_domain_nembed_range.empty())
             {
-                max_len = std::min(max_len,
-                                   find_threshold_length_for_byte_size<prec>(
-                                       max_byte_size_for_hipfftw_tests(), rank, is_real(dft_kind)));
+                // e.g., negative or zero rank
+                fwd_domain_nembed_range.push_back(std::vector<ptrdiff_t>());
             }
+            const auto fwd_domain_nembed = get_random_element_in(fwd_domain_nembed_range);
             std::vector<std::vector<ptrdiff_t>> range_of_lengths
-                = arg_validation_strictly_positive_vec_range(rank, max_len);
+                = arg_validation_lengths_range_many_dft(fwd_domain_nembed, is_real_ip);
             // --> test for empty lengths, too (re-interpreted as a nullptr argument by hipfftw_helper)
             range_of_lengths.push_back(std::vector<ptrdiff_t>());
-            const auto fwd_domain_nembed = get_random_element_in(fwd_domain_nembed_range);
-            const auto lengths           = get_random_element_in(
-                arg_validation_lengths_range_many_dft(fwd_domain_nembed, is_real_ip));
+            const auto lengths = get_random_element_in(range_of_lengths);
             const auto bwd_domain_nembed
                 = get_random_element_in(arg_validation_bwd_domain_nembed_range_many_dft(
-                    max_nembed, fwd_domain_nembed, lengths, dft_kind, placement));
+                    max_nembed_fwd_domain, fwd_domain_nembed, lengths, dft_kind, placement));
             std::set<ptrdiff_t> istride_range = {get_random_elementary_stride(!valid_value),
                                                  get_random_elementary_stride(valid_value)};
             if(is_real_ip)
                 istride_range.insert(1);
-            const auto          istride       = get_random_element_in(istride_range);
+            io_nembed_t io_nembed;
+            io_nembed.istride                 = get_random_element_in(istride_range);
             std::set<ptrdiff_t> ostride_range = {get_random_elementary_stride(!valid_value),
                                                  get_random_elementary_stride(valid_value)};
-            if(placement == fft_placement_inplace && istride > 0)
-                ostride_range.insert(istride);
-            const auto  ostride  = get_random_element_in(ostride_range);
-            const auto& inembed  = is_fwd(dft_kind) ? fwd_domain_nembed : bwd_domain_nembed;
-            const auto& onembed  = is_fwd(dft_kind) ? bwd_domain_nembed : fwd_domain_nembed;
-            const auto  istrides = compute_strides_from_nembed(inembed, istride);
-            const auto  ostrides = compute_strides_from_nembed(onembed, ostride);
-            const auto  idist    = get_random_element_in(
-                arg_validation_dist_range_many_dft(batches, inembed, istride, get_random_dist));
-            const auto odist = get_random_element_in(
-                arg_validation_dist_range_many_dft(batches, onembed, ostride, get_random_dist));
+            if(placement == fft_placement_inplace && io_nembed.istride > 0)
+                ostride_range.insert(io_nembed.istride);
+            io_nembed.ostride = get_random_element_in(ostride_range);
+            if(is_fwd(dft_kind))
+            {
+                io_nembed.inembed.assign(fwd_domain_nembed.begin(), fwd_domain_nembed.end());
+                io_nembed.onembed.assign(bwd_domain_nembed.begin(), bwd_domain_nembed.end());
+            }
+            else
+            {
+                io_nembed.inembed.assign(bwd_domain_nembed.begin(), bwd_domain_nembed.end());
+                io_nembed.onembed.assign(fwd_domain_nembed.begin(), fwd_domain_nembed.end());
+            }
+            const auto idist = get_random_element_in(arg_validation_dist_range_many_dft(
+                nbatch, io_nembed, fft_io::fft_io_in, get_random_dist));
+            const auto odist = get_random_element_in(arg_validation_dist_range_many_dft(
+                nbatch, io_nembed, fft_io::fft_io_out, get_random_dist));
 
             const auto sign  = get_random_element_in(arg_validation_sign_range(dft_kind));
             const auto flags = get_random_element_in(arg_validation_flags_range(dft_kind, rank));
+
             hipfftw_helper<prec> helper_to_add;
-            helper_to_add.set_creation_args(dft_kind,
-                                            rank,
-                                            lengths,
-                                            placement,
-                                            sign,
-                                            flags,
-                                            istrides,
-                                            ostrides,
-                                            batch_rank,
-                                            batches,
-                                            idist,
-                                            odist);
+            helper_to_add.set_creation_args(
+                dft_kind, rank, lengths, placement, sign, flags, io_nembed, nbatch, idist, odist);
             ret.emplace_back(helper_to_add);
         }
         return ret;
@@ -1632,26 +1628,6 @@ namespace
         std::map<std::string, std::vector<hipfftw_input_validation_params<prec>>> full_scope_tests;
         hipfftw_input_validation_params<prec>                                     test_to_add;
 
-        auto allow_io_allocation = [](const hipfftw_helper<prec>& test_helper) {
-            try
-            {
-                return test_helper.get_data_byte_size(fft_io::fft_io_in)
-                           <= max_byte_size_for_hipfftw_tests()
-                       && test_helper.get_data_byte_size(fft_io::fft_io_out)
-                              <= max_byte_size_for_hipfftw_tests();
-            }
-            catch(const hipfftw_helper_num_elements_calc_exception& e)
-            {
-                // some helper parameters are such that the data_byte size simply cannot be calculated
-                return false;
-            }
-            catch(...)
-            {
-                // unanticipated exception: escalate it
-                throw;
-            }
-        };
-
         const std::vector<std::pair<bool, bool>> possible_creation_io_is_null_inplace
             = {{false, false}, {true, true}};
         const std::vector<std::pair<bool, bool>> possible_creation_io_is_null_notinplace
@@ -1678,8 +1654,9 @@ namespace
                         test_to_add.execution_io = exec_io_flags;
                         test_to_add.plan_helper  = helper;
                         // skip params if they can't/shouldn't be tested anyways
-                        if(!test_to_add.can_be_tested(allow_io_allocation(helper)))
+                        if(!test_to_add.can_be_tested())
                             continue;
+
                         // tests expect a failure at execution at least
                         if(test_to_add.expected_internal_exception_for(hipfftw_step::plan_execution)
                            == hipfftw_internal_exception::none)
@@ -1749,6 +1726,7 @@ namespace
 
             if(!params.can_be_tested())
                 GTEST_FAIL() << "invalid parameters which cannot be tested";
+            safe_to_touch_nonnull_io = true;
 
             // get_data_byte_size requires valid ranks and lengths to be calculated (of course)
             // --> make sure the I/O data sizes are not zero for test consistency w.r.t. testing
@@ -1760,6 +1738,7 @@ namespace
                 }
                 catch(const hipfftw_helper_num_elements_calc_exception& e)
                 {
+                    safe_to_touch_nonnull_io = false;
                     return sizeof(hipfftw_complex_t<prec>); // some nonzero value
                 }
                 catch(...)
@@ -1769,6 +1748,14 @@ namespace
             };
             const size_t input_data_size  = compute_io_size(fft_io::fft_io_in);
             const size_t output_data_size = compute_io_size(fft_io::fft_io_out);
+            if(input_data_size > max_byte_size_for_hipfftw_tests()
+               || output_data_size > max_byte_size_for_hipfftw_tests())
+            {
+                GTEST_SKIP()
+                    << "Skipping test due to excessive I/O byte size (max of I/O byte size: "
+                    << std::max(input_data_size, output_data_size)
+                    << " vs limit: " << max_byte_size_for_hipfftw_tests() << ")";
+            }
 
             if(params.creation_io_is_null.first)
                 plan_creation_input.free();
@@ -1812,6 +1799,7 @@ namespace
         hostbuf plan_creation_output;
         hostbuf plan_execution_input;
         hostbuf plan_execution_output;
+        bool    safe_to_touch_nonnull_io;
 
         void expect_failure(hipfftw_step step_target)
         {
@@ -1835,11 +1823,19 @@ namespace
                     exception_logger  = std::make_unique<hipfftw_exception_logger>();
                     check_log_content = exception_logger->is_active();
                 }
-                params.plan_helper.create_plan(plan_creation_input.data(),
-                                               params.creation_placement() == fft_placement_inplace
-                                                   ? plan_creation_input.data()
-                                                   : plan_creation_output.data(),
-                                               params.creation_options);
+                void* creation_in  = plan_creation_input.data();
+                void* creation_out = params.creation_placement() == fft_placement_inplace
+                                         ? plan_creation_input.data()
+                                         : plan_creation_output.data();
+                if((creation_in || creation_out)
+                   && flags_are_valid_for_hipfftw(params.plan_helper.get_flags())
+                   && !(params.plan_helper.get_flags() & FFTW_ESTIMATE)
+                   && !safe_to_touch_nonnull_io)
+                {
+                    // I/O may be touched during plan creation, yet their size couldn't be clearly determined
+                    GTEST_SKIP() << "unsafe to test for these parameters (plan creation)";
+                }
+                params.plan_helper.create_plan(creation_in, creation_out, params.creation_options);
                 if(step_target == hipfftw_step::plan_creation)
                 {
                     log_content = exception_logger->get_log();
@@ -1866,12 +1862,21 @@ namespace
                                             : (params.execution_placement() == fft_placement_inplace
                                                    ? plan_execution_input.data()
                                                    : plan_execution_output.data());
+
+                    if(params.plan_helper.get_plan() && (creation_in || creation_out)
+                       && !safe_to_touch_nonnull_io)
+                    {
+                        // A plan was successfully created and I/O may be touched during plan execution,
+                        // yet their size(s) couldn't be clearly determined
+                        GTEST_SKIP() << "unsafe to test for these parameters (plan execution)";
+                    }
                     // intentionally do not check that hipfftw_test_plan != nullptr as that's
                     // kind of the point of this test: even if it doesn't report error codes,
                     // execution must not misbehave (e.g. must not segfault) with invalid argument
                     // (if hipfftw's exception handler is made verbose, it should print failure
                     //  info to the log, and that's verified in the end)
                     params.plan_helper.execute(exec_in, exec_out, params.execution_option);
+
                     log_content = exception_logger->get_log();
                     exception_logger.reset();
                 }
@@ -2706,7 +2711,7 @@ namespace
         const size_t max_data_size_per_batch
             = max_byte_size_for_hipfftw_tests()
               / (std::max(elementary_bwd_stride, elementary_bwd_stride) * batches[0]);
-        const ptrdiff_t max_nembed
+        const ptrdiff_t max_nembed_fwd_domain
             = std::min(static_cast<ptrdiff_t>(max_length_for_hipfftw_test),
                        find_threshold_length_for_byte_size<prec>(
                            max_data_size_per_batch, rank, is_real(dft_kind)));
@@ -2718,7 +2723,8 @@ namespace
         {
             try
             {
-                auto fwd_nembed = get_random_vector<valid_value, int>(rank, max_nembed, 1);
+                auto fwd_nembed
+                    = get_random_vector<valid_value, int>(rank, max_nembed_fwd_domain, 1);
                 if(is_real(dft_kind) && placement == fft_placement_inplace)
                 {
                     // fwd_nembed.back() * elementary_fwd_stride must be even
@@ -2757,7 +2763,7 @@ namespace
                 }
                 /* -------------------------- END WORKAROUND ----------------------------------- */
                 const auto bwd_nembed = get_random_bwd_domain_nembed<valid_value>(
-                    max_nembed, fwd_nembed, lengths, dft_kind, placement);
+                    max_nembed_fwd_domain, fwd_nembed, lengths, dft_kind, placement);
                 /* ------------------------- BEGIN WORKAROUND ----------------------------------- */
                 // TODO : remove this workaround once rocfft can do such layouts
                 if(is_real(dft_kind) && lengths.back() % 2 == 0
@@ -2768,16 +2774,25 @@ namespace
                     fwd_nembed.back()--;
                 }
                 /* -------------------------- END WORKAROUND ----------------------------------- */
-                const auto& istride
-                    = is_fwd(dft_kind) ? elementary_fwd_stride : elementary_bwd_stride;
-                const auto& ostride
-                    = is_fwd(dft_kind) ? elementary_bwd_stride : elementary_fwd_stride;
-                const auto& inembed  = is_fwd(dft_kind) ? fwd_nembed : bwd_nembed;
-                const auto& onembed  = is_fwd(dft_kind) ? bwd_nembed : fwd_nembed;
-                const auto  istrides = compute_strides_from_nembed(inembed, istride);
-                const auto  ostrides = compute_strides_from_nembed(onembed, ostride);
-                const std::vector<ptrdiff_t> idist(1, istrides.front() * inembed.front());
-                const std::vector<ptrdiff_t> odist(1, ostrides.front() * onembed.front());
+                io_nembed_t io_nembed;
+                if(is_fwd(dft_kind))
+                {
+                    io_nembed.istride = elementary_fwd_stride;
+                    io_nembed.ostride = elementary_bwd_stride;
+                    io_nembed.inembed.assign(fwd_nembed.begin(), fwd_nembed.end());
+                    io_nembed.onembed.assign(bwd_nembed.begin(), bwd_nembed.end());
+                }
+                else
+                {
+                    io_nembed.istride = elementary_bwd_stride;
+                    io_nembed.ostride = elementary_fwd_stride;
+                    io_nembed.inembed.assign(bwd_nembed.begin(), bwd_nembed.end());
+                    io_nembed.onembed.assign(fwd_nembed.begin(), fwd_nembed.end());
+                }
+                const auto idist = product(io_nembed.inembed.begin(), io_nembed.inembed.end())
+                                   * io_nembed.istride;
+                const auto odist = product(io_nembed.onembed.begin(), io_nembed.onembed.end())
+                                   * io_nembed.ostride;
 
                 helper.set_creation_args(dft_kind,
                                          rank,
@@ -2785,10 +2800,8 @@ namespace
                                          placement,
                                          is_fwd(dft_kind) ? FFTW_FORWARD : FFTW_BACKWARD,
                                          FFTW_ESTIMATE,
-                                         istrides,
-                                         ostrides,
-                                         batch_rank,
-                                         batches,
+                                         io_nembed,
+                                         batches[0],
                                          idist,
                                          odist);
                 found_one = true;
@@ -2827,14 +2840,18 @@ namespace
         if(is_real(dft_kind))
             bwd_nembed.back() = bwd_nembed.back() / 2 + 1;
 
-        const auto& istride  = batches[0] * dist;
-        const auto& ostride  = batches[0] * dist;
-        const auto& inembed  = is_fwd(dft_kind) ? fwd_nembed : bwd_nembed;
-        const auto& onembed  = is_fwd(dft_kind) ? bwd_nembed : fwd_nembed;
-        const auto  istrides = compute_strides_from_nembed(inembed, istride);
-        const auto  ostrides = compute_strides_from_nembed(onembed, ostride);
-        const auto  idist    = std::vector<ptrdiff_t>(1, dist);
-        const auto  odist    = std::vector<ptrdiff_t>(1, dist);
+        io_nembed_t io_nembed;
+        io_nembed.istride = io_nembed.ostride = batches[0] * dist;
+        if(is_fwd(dft_kind))
+        {
+            io_nembed.inembed.assign(fwd_nembed.begin(), fwd_nembed.end());
+            io_nembed.onembed.assign(bwd_nembed.begin(), bwd_nembed.end());
+        }
+        else
+        {
+            io_nembed.inembed.assign(bwd_nembed.begin(), bwd_nembed.end());
+            io_nembed.onembed.assign(fwd_nembed.begin(), fwd_nembed.end());
+        }
 
         helper.set_creation_args(dft_kind,
                                  rank,
@@ -2842,12 +2859,10 @@ namespace
                                  placement,
                                  is_fwd(dft_kind) ? FFTW_FORWARD : FFTW_BACKWARD,
                                  FFTW_ESTIMATE,
-                                 istrides,
-                                 ostrides,
-                                 batch_rank,
-                                 batches,
-                                 idist,
-                                 odist);
+                                 io_nembed,
+                                 batches[0],
+                                 dist,
+                                 dist);
     }
 
     template <fft_precision prec>

@@ -789,7 +789,7 @@ private:
 
         // fetch/infer plan creation function arguments
         const auto& hipfftw_impl = hipfftw_funcs<prec>::get_instance();
-        const auto  int_len      = get_length_as<int>();
+        const auto  int_len      = get_lengths_as<int>();
         const int*  int_len_ptr  = int_len.empty() ? nullptr : int_len.data();
 
         switch(chosen_creation)
@@ -1492,9 +1492,13 @@ public:
     // returns the lengths as an std::vector<T> if they may all be safely converted to T
     // (the returned vector is empty otherwise)
     template <typename T, std::enable_if_t<std::is_integral_v<T>, bool> = true>
-    std::vector<T> get_length_as() const
+    std::vector<T> get_lengths_as() const
     {
         return convert_vector_to<T>(lengths);
+    }
+    const decltype(lengths)& get_lengths() const
+    {
+        return lengths;
     }
     fft_result_placement get_placement() const
     {
@@ -1518,6 +1522,11 @@ public:
         const std::vector<ptrdiff_t>& strides = io == fft_io::fft_io_in ? istrides : ostrides;
         return convert_vector_to<T>(strides);
     }
+    const decltype(istrides)& get_strides(fft_io io) const
+    {
+        return io == fft_io::fft_io_in ? istrides : ostrides;
+    }
+
     int get_batch_rank() const
     {
         return batch_rank;
@@ -1553,6 +1562,12 @@ public:
                 "a single distance value cannot be queried for multi-batched cases");
         return tmp[0];
     }
+
+    decltype(idist)::value_type get_dist(fft_io io) const
+    {
+        return get_dist_as<typename decltype(idist)::value_type>(io);
+    }
+
     template <typename T, std::enable_if_t<std::is_integral_v<T>, bool> = true>
     T get_nbatch_as() const
     {
@@ -1561,6 +1576,11 @@ public:
             throw std::runtime_error(
                 "a single batch size cannot be queried for multi-batched cases");
         return tmp[0];
+    }
+
+    decltype(batches)::value_type get_nbatch() const
+    {
+        return get_nbatch_as<typename decltype(batches)::value_type>();
     }
 
     hipfftw_plan_creation_func get_plan_creation_function() const
@@ -1616,7 +1636,7 @@ public:
             // rank is not passed as an argument but dictated by the called function,
             // (must be 1, 2, or 3), and as many lengths must be passed as individual
             // integer values
-            return (rank == 1 || rank == 2 || rank == 3) && get_length_as<int>().size() == rank;
+            return (rank == 1 || rank == 2 || rank == 3) && get_lengths_as<int>().size() == rank;
             break;
         case hipfftw_plan_creation_func::PLAN_DFT:
             // only unbatched cases (making distances irrelevant)
@@ -1632,7 +1652,7 @@ public:
             }
             // the lengths must be representable as integers, if not empty (supposedly
             // intentionally, e.g., for input validation testing purposes)
-            return lengths.empty() || get_length_as<int>().size() == rank;
+            return lengths.empty() || get_lengths_as<int>().size() == rank;
             break;
         case hipfftw_plan_creation_func::PLAN_MANY:
         {
@@ -1644,7 +1664,7 @@ public:
                 return false;
             // the lengths must be representable as integers, if not empty (supposedly
             // intentionally, e.g., for input validation testing purposes)
-            return lengths.empty() || get_length_as<int>().size() == rank;
+            return lengths.empty() || get_lengths_as<int>().size() == rank;
             break;
         }
         case hipfftw_plan_creation_func::PLAN_GURU:
@@ -2010,6 +2030,21 @@ public:
     void release_plan() const
     {
         plan_bundle.reset();
+    }
+    bool is_using_default_strides() const
+    {
+        return istrides == default_strides(dft_kind, plan_placement, fft_io::fft_io_in, lengths)
+               && ostrides
+                      == default_strides(dft_kind, plan_placement, fft_io::fft_io_out, lengths);
+    }
+    bool is_using_default_distances() const
+    {
+        return idist
+                   == default_distances(
+                       dft_kind, plan_placement, fft_io::fft_io_in, lengths, batches)
+               && odist
+                      == default_distances(
+                          dft_kind, plan_placement, fft_io::fft_io_out, lengths, batches);
     }
 };
 

@@ -2057,7 +2057,7 @@ namespace
         }
         std::vector<size_t> get_lengths() const
         {
-            return plan_helper.template get_length_as<size_t>();
+            return plan_helper.template get_lengths_as<size_t>();
         }
         std::vector<size_t> get_ilengths() const
         {
@@ -2275,6 +2275,11 @@ namespace
             return stream;
         }
 
+        bool is_manual_test() const
+        {
+            return manually_created;
+        }
+
     private:
         static constexpr std::string_view creation_input_mem_type_label = "creation_input_mem_type";
         static constexpr std::string_view creation_output_mem_type_label
@@ -2285,6 +2290,77 @@ namespace
             = "execution_output_mem_type";
         bool manually_created;
     };
+
+#ifdef __HIP_PLATFORM_AMD__
+    template <fft_precision prec>
+    bool is_known_defect(const hipfftw_helper<prec>& helper)
+    {
+        bool       ret      = false;
+        const auto dft_kind = helper.get_dft_kind();
+        const auto len      = helper.get_lengths();
+        if(helper.get_rank() == 3 && is_complex(dft_kind) && !helper.is_using_default_strides())
+        {
+            // rocfft can't create some plans with non-default strides for lengths
+            // AxBxC wherein B, C are in
+            const std::vector<std::array<ptrdiff_t, 2>> symptomatic_sub_len = {{16, 4},
+                                                                               {4, 16},
+                                                                               {25, 4},
+                                                                               {4, 25},
+                                                                               {16, 25},
+                                                                               {25, 16},
+                                                                               {25, 25},
+                                                                               {8, 9},
+                                                                               {9, 8},
+                                                                               {8, 4},
+                                                                               {4, 8},
+                                                                               {8, 8},
+                                                                               {4, 9},
+                                                                               {9, 4},
+                                                                               {4, 4},
+                                                                               {20, 10},
+                                                                               {10, 20}};
+            // (Note: failing lengths usually have a value of A involving a prime factor > 17)
+            ret = ret
+                  || std::any_of(symptomatic_sub_len.begin(),
+                                 symptomatic_sub_len.end(),
+                                 [&](const std::array<ptrdiff_t, 2>& sub_len) {
+                                     return std::equal(
+                                         sub_len.begin(), sub_len.end(), len.begin() + 1);
+                                 });
+        }
+        if(is_real(dft_kind) && len.back() % 2 == 0
+           && (helper.get_nbatch() > 1 || product(len.begin(), len.end() - 1) > 1))
+        {
+            // rocfft can't handle odd values of strides/distances between rows
+            // with even values of lengths.back() for real transforms.
+            // Incorrect results are generated
+            const auto rank = helper.get_rank();
+            const auto fwd_strides
+                = helper.get_strides(is_fwd(dft_kind) ? fft_io::fft_io_in : fft_io::fft_io_out);
+            const auto fwd_dist
+                = helper.get_dist(is_fwd(dft_kind) ? fft_io::fft_io_in : fft_io::fft_io_out);
+            const auto fwd_row_dist = rank > 1 ? fwd_strides[rank - 2] : fwd_dist;
+
+            ret = ret || fwd_row_dist % 2 == 1;
+        }
+        if(is_complex(dft_kind) && helper.get_rank() == 2 && helper.is_using_default_strides()
+           && !helper.is_using_default_distances())
+        {
+            // incorrect results generated for the following lengths
+            const std::vector<std::array<ptrdiff_t, 2>> symptomatic_lengths = {{81, 74}};
+
+            ret = ret
+                  || std::any_of(symptomatic_lengths.begin(),
+                                 symptomatic_lengths.end(),
+                                 [&](const std::array<ptrdiff_t, 2>& failing_lengths) {
+                                     return std::equal(failing_lengths.begin(),
+                                                       failing_lengths.end(),
+                                                       len.begin());
+                                 });
+        }
+        return ret;
+    }
+#endif
 
     template <fft_precision prec>
     class hipfftw_functional_validation
@@ -2299,6 +2375,11 @@ namespace
 
                 if(!params.can_be_tested())
                     GTEST_FAIL() << "invalid parameters, cannot be tested";
+#ifdef __HIP_PLATFORM_AMD__
+                if(!params.is_manual_test() && is_known_defect(params.plan_helper))
+                    GTEST_SKIP()
+                        << "skipped automatically-generated test due to known rocFFT defect";
+#endif
                 if(reference_plan)
                     GTEST_FAIL()
                         << "Starting from an unclean slate (reference plan is not nullptr)";
@@ -2733,47 +2814,8 @@ namespace
                 }
                 auto lengths = get_random_lengths_from_fwd_domain_nembed<valid_value>(
                     fwd_nembed, is_real(dft_kind) && placement == fft_placement_inplace);
-                /* ------------------------- BEGIN WORKAROUND ----------------------------------- */
-                // rocfft struggles to create some plans with non-default strides for lengths
-                // AxBxC wherein B,C are in
-                const std::vector<std::array<decltype(lengths)::value_type, 2>> symptomatic_sub_len
-                    = {{16, 4},
-                       {4, 16},
-                       {16, 25},
-                       {25, 16},
-                       {8, 9},
-                       {9, 8},
-                       {8, 4},
-                       {4, 8},
-                       {4, 9},
-                       {9, 4},
-                       {20, 10},
-                       {10, 20}};
-                // (failing lengths usually have a value of A involving a prime factor > 17)
-                while(rank == 3
-                      && std::any_of(symptomatic_sub_len.begin(),
-                                     symptomatic_sub_len.end(),
-                                     [&](const std::array<ptrdiff_t, 2>& sub_len) {
-                                         return std::equal(
-                                             sub_len.begin(), sub_len.end(), lengths.begin() + 1);
-                                     }))
-                {
-                    lengths = get_random_lengths_from_fwd_domain_nembed<valid_value>(
-                        fwd_nembed, is_real(dft_kind) && placement == fft_placement_inplace);
-                }
-                /* -------------------------- END WORKAROUND ----------------------------------- */
                 const auto bwd_nembed = get_random_bwd_domain_nembed<valid_value>(
                     max_nembed_fwd_domain, fwd_nembed, lengths, dft_kind, placement);
-                /* ------------------------- BEGIN WORKAROUND ----------------------------------- */
-                // TODO : remove this workaround once rocfft can do such layouts
-                if(is_real(dft_kind) && lengths.back() % 2 == 0
-                   && (fwd_nembed.back() * elementary_fwd_stride) % 2 == 1)
-                {
-                    // rocfft can't handle odd values of (fwd_nembed.back() * elementary_fwd_stride)
-                    // with even values of lengths.back() for real transforms.
-                    fwd_nembed.back()--;
-                }
-                /* -------------------------- END WORKAROUND ----------------------------------- */
                 io_nembed_t io_nembed;
                 if(is_fwd(dft_kind))
                 {

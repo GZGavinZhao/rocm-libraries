@@ -42,7 +42,8 @@
 #include <Tensile/Task.hpp>
 #include <Tensile/Utils.hpp>
 
-#include <origami/streamk.hpp>
+#include "origami/origami.hpp"
+#include "origami/streamk.hpp"
 
 #define TENSILE_COMMON_KERNEL_ARGS_SIZE 16
 
@@ -166,17 +167,17 @@ namespace TensileLite
 
     struct StreamKSettings
     {
-        origami::streamk::reduction_type reduction = origami::streamk::reduction_type::Tree;
+        origami::reduction_t reduction = origami::reduction_t::tree;
         size_t grid = 0;
     };
 
     /**
-     * Represents a single kernel or set of kernels that can perform a single
-     * tensor contraction.
-     *
-     * Can generate `KernelInvocation` objects to solve a particular problem
-     * given a set of `ContractionInputs`.
-     */
+ * Represents a single kernel or set of kernels that can perform a single
+ * tensor contraction.
+ *
+ * Can generate `KernelInvocation` objects to solve a particular problem
+ * given a set of `ContractionInputs`.
+ */
     class ContractionSolution : public Solution
     {
     public:
@@ -186,8 +187,8 @@ namespace TensileLite
         using ParamsCache  = CacheMap<std::pair<int32_t, uint32_t>, Problem>;
 
         /**
-         * Indicate a solution is equally or estimatedly matched.
-         */
+  * Indicate a solution is equally or estimatedly matched.
+  */
         enum class MatchingTag
         {
             Equal,
@@ -217,6 +218,11 @@ namespace TensileLite
             return kernelName;
         }
         virtual bool isFallbackForHW(Hardware const&) const;
+
+        bool isStreamK() const
+        {
+            return sizeMapping.streamK > 0;
+        }
 
         //! Estimates based on problem size, solution tile, and  machine hardware
         //! charz:
@@ -271,13 +277,26 @@ namespace TensileLite
             StaticPerformanceModel staticModel;
         };
 
+        struct TAMetricProblemScore
+        {
+            Granularities granularites;
+
+            int CUs = 0;
+
+            double summationPerformance = 0.0;
+
+            double M;
+            double N;
+            double K;
+        };
+
         bool checkInternalArgumentsSupport(ContractionProblem const& problem,
                                            std::ostream&             stream,
                                            bool                      debug = false) const;
 
         /**
-         * Calculate required workspace size.
-         */
+   * Calculate required workspace size.
+   */
         size_t requiredWorkspaceSize(Problem const& problem, Hardware const& hardware) const;
         size_t requiredWorkspaceSizeGroupedGemm(std::vector<Problem> const& problems,
                                                 Hardware const&             hardware) const;
@@ -286,8 +305,8 @@ namespace TensileLite
 
         size_t requiredSynchronizerSize(Problem const& problem, Hardware const& hardware) const;
 
-        origami::streamk::reduction_type getSKReduction(Problem const& problem, Hardware const& hardware) const;
-        size_t getSKGrid(Problem const& problem, Hardware const& hardware, size_t tiles, origami::streamk::reduction_type reductionStrat) const;
+        origami::reduction_t getSKReduction(Problem const& problem, Hardware const& hardware) const;
+        size_t getSKGrid(Problem const& problem, Hardware const& hardware, size_t tiles, origami::reduction_t reductionStrat) const;
         size_t partialTileSize(size_t skGrid) const;
 
         static float computeGranularity(float x);
@@ -305,15 +324,28 @@ namespace TensileLite
                                                       double totalGranularity,
                                                       int    globalSplitU) const;
 
+        TAMetricProblemScore computeProblemScore(
+            Hardware const& hardware, double M, double N, double K, double NumBatches) const;
+
+        double computeTileAwareMetric(TAMetricProblemScore pp,
+                                      TAMetricProblemScore ppReference) const;
+
+        double computeTAMScore(Problem const&  problem,
+                               Hardware const& hardware,
+                               double          model_M,
+                               double          model_N,
+                               double          model_K,
+                               double          model_NumBatches) const;
+
         /**
-         * Calculate the projected performance based on granularity loss.
-         */
+   * Calculate the projected performance based on granularity loss.
+   */
         ProjectedPerformance projectedPerformance(Problem const&  problem,
                                                   Hardware const& hardware) const;
 
         /**
-         * Generate a set of kernel calls to solve a particular problem.
-         */
+   * Generate a set of kernel calls to solve a particular problem.
+   */
         virtual std::vector<KernelInvocation> solve(ContractionProblem const& problem,
                                                     ProblemInputs const&      inputs,
                                                     Hardware const&           hardware,

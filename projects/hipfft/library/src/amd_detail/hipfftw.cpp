@@ -377,7 +377,7 @@ namespace
             //                               std::inner_product(k.begin(), k.end(), ostrides.begin(), 0)).
             // This requirement translates into the followng element-wise conditions on
             // idist, odist, istrides, and ostrides.
-            for(auto batch_dim = 0; batch_dim < batch_rank; batch_dim++)
+            for(size_t batch_dim = 0; batch_dim < batch_rank; batch_dim++)
             {
                 // 0 <= m[batch_dim] < batches[batch_dim], so the corresponding distance is
                 // irrelevant if batches[batch_dim] == 1.
@@ -386,7 +386,7 @@ namespace
                 if(idist[batch_dim] * ielem_sz != odist[batch_dim] * oelem_sz)
                     return false;
             }
-            for(auto dim = 0; dim < rank - 1 /* exclude leading dimension */; dim++)
+            for(size_t dim = 0; dim < rank - 1 /* exclude leading dimension */; dim++)
             {
                 if(lengths[dim] == 1)
                     continue;
@@ -405,7 +405,7 @@ namespace
         {
             std::vector<size_t> generalized_lengths(rank + batch_rank),
                 generalized_strides(rank + batch_rank);
-            for(auto dim = 0; dim < rank; dim++)
+            for(size_t dim = 0; dim < rank; dim++)
             {
                 generalized_lengths[dim]
                     = dft_type == rocfft_transform_type_real_forward && dim == rank - 1
@@ -413,7 +413,7 @@ namespace
                           : lengths[dim];
                 generalized_strides[dim] = ostrides[dim];
             }
-            for(auto batch_dim = 0; batch_dim < batch_rank; batch_dim++)
+            for(size_t batch_dim = 0; batch_dim < batch_rank; batch_dim++)
             {
                 generalized_lengths[rank + batch_dim] = batches[batch_dim];
                 generalized_strides[rank + batch_dim] = odist[batch_dim];
@@ -508,7 +508,7 @@ namespace
             static_assert(std::numeric_limits<ptrdiff_t>::max()
                           <= std::numeric_limits<size_t>::max());
             // Validation of input arguments:
-            for(auto dim = 0; dim < rank; dim++)
+            for(size_t dim = 0; dim < rank; dim++)
             {
                 if(data_layout.lengths[dim] <= 0)
                     throw hipfftw_invalid_arg("length(s) must be strictly positive.");
@@ -521,7 +521,7 @@ namespace
                         throw hipfftw_unsupported("negative stride(s) are not supported.");
                 }
             }
-            for(auto batch_dim = 0; batch_dim < batch_rank; batch_dim++)
+            for(size_t batch_dim = 0; batch_dim < batch_rank; batch_dim++)
             {
                 if(data_layout.batches[batch_dim] <= 0)
                     throw hipfftw_invalid_arg("batch(es) must be strictly positive.");
@@ -530,7 +530,7 @@ namespace
                     if(data_layout.idist[batch_dim] == 0 || data_layout.odist[batch_dim] == 0)
                         throw hipfftw_invalid_arg(
                             "distance(s) must not be zero for nontrivial batching dimensions.");
-                    if(data_layout.idist[batch_dim] <= 0 || data_layout.odist[batch_dim] <= 0)
+                    if(data_layout.idist[batch_dim] < 0 || data_layout.odist[batch_dim] < 0)
                         throw hipfftw_unsupported("negative distance(s) are not supported.");
                 }
             }
@@ -1096,7 +1096,7 @@ static hipfftw_plan_t<prec>* hipfftw_create_basic_plan(
     unsigned                                                            flags)
 {
     if(rank <= 0)
-        throw hipfftw_invalid_arg("ranks must be strictly positive.");
+        throw hipfftw_invalid_arg("rank values must be strictly positive.");
     // rank == 1, 2, 3, or unsupported
     switch(rank)
     {
@@ -1154,7 +1154,7 @@ static hipfftw_plan_t<prec>* hipfftw_create_advanced_plan(
     unsigned                                                            flags)
 {
     if(rank <= 0)
-        throw hipfftw_invalid_arg("ranks must be strictly positive.");
+        throw hipfftw_invalid_arg("rank values must be strictly positive.");
     // rank == 1, 2, 3, or unsupported
     switch(rank)
     {

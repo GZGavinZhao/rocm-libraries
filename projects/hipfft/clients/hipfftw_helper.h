@@ -605,7 +605,6 @@ static std::vector<ptrdiff_t> default_strides(fft_transform_type            dft_
         {
             if((io == fft_io_out) == is_fwd(dft_type))
                 def_stride *= (lengths[dim_idx] / 2 + 1);
-
             else
             {
                 if(placement == fft_placement_inplace)
@@ -1007,14 +1006,12 @@ private:
     // converts vec to an std::vector<T> if it can be done so safely
     // (an empty vector is returned otherwise)
     template <typename T, std::enable_if_t<std::is_integral_v<T>, bool> = true>
-    static std::vector<T> convert_vector_to(const std::vector<ptrdiff_t> vec)
+    static std::vector<T> convert_vector_to(const std::vector<ptrdiff_t>& vec)
     {
-        if constexpr(std::is_same_v<T, typename decltype(vec)::value_type>)
+        if constexpr(std::is_same_v<T, ptrdiff_t>)
             return vec;
         std::vector<T> ret;
-        if(std::any_of(vec.begin(), vec.end(), [](const typename decltype(vec)::value_type& val) {
-               return val < std::numeric_limits<T>::lowest() || val > std::numeric_limits<T>::max();
-           }))
+        if(!vector_has_valid_values_as<T>(vec, vec.size()))
         {
             // not a safe conversion, return empty lengths
             return ret;
@@ -1135,7 +1132,8 @@ private:
                         = hipfftw_plan_creation_func::ANY) const
     {
         if(!hipfftw_creation_options_are_well_defined(creation_options))
-            throw std::invalid_argument("ill-defined creation_options used in has_valid_rank");
+            throw std::invalid_argument(
+                "ill-defined creation_options passed to hipfftw_helper::has_valid_rank");
         // check if valid for any of the possible plan creation functions
         bool ret = false;
         for(auto creation_func : hipfftw_plan_creation_func_candidates)
@@ -1183,9 +1181,7 @@ private:
     {
         if(!hipfftw_creation_options_are_well_defined(creation_options))
             throw std::invalid_argument(
-                "ill-defined creation_options used in has_valid_batch_rank");
-        if(!rank_is_valid_for_hipfftw(batch_rank))
-            return false;
+                "ill-defined creation_options passed to hipfftw_helper::has_valid_batch_rank");
         // check if valid for any of the possible plan creation functions
         bool ret = false;
         for(auto creation_func : hipfftw_plan_creation_func_candidates)
@@ -1223,10 +1219,11 @@ private:
     bool has_valid_strides(fft_io io, hipfftw_plan_creation_func creation_options) const
     {
         if(io != fft_io::fft_io_in && io != fft_io::fft_io_out)
-            throw std::invalid_argument("invalid io");
+            throw std::invalid_argument("invalid io passed to hipfftw_helper::has_valid_strides");
 
         if(!hipfftw_creation_options_are_well_defined(creation_options))
-            throw std::invalid_argument("ill-defined creation_options used in has_valid_strides");
+            throw std::invalid_argument(
+                "ill-defined creation_options passed to hipfftw_helper::has_valid_strides");
         const auto& strides = io == fft_io::fft_io_in ? istrides : ostrides;
         bool        ret     = vector_has_valid_values_as<ptrdiff_t>(strides, rank);
         // 0 stride values are invalid for any nontrivial length
@@ -1246,7 +1243,7 @@ private:
             }
             const auto ifact = dft_kind == fft_transform_type_real_forward ? 1 : 2;
             const auto ofact = dft_kind == fft_transform_type_real_inverse ? 1 : 2;
-            for(size_t dim = 0; ret && dim < rank - 1; dim++)
+            for(int dim = 0; ret && dim < rank - 1; dim++)
             {
                 if(lengths[dim] == 1)
                     continue;
@@ -1282,7 +1279,9 @@ private:
                 bool valid_io_nembed = io_nembed.has_value();
                 if(valid_io_nembed && !lengths.empty())
                 {
-                    if(lengths.back() != 1 && (io_nembed->istride == 0 || io_nembed->ostride == 0))
+                    if(std::any_of(
+                           lengths.begin(), lengths.end(), [](ptrdiff_t len) { return len != 1; })
+                       && (io_nembed->istride == 0 || io_nembed->ostride == 0))
                         valid_io_nembed = false;
                     for(auto io : {fft_io::fft_io_in, fft_io::fft_io_out})
                     {
@@ -1311,7 +1310,7 @@ private:
             case hipfftw_plan_creation_func::PLAN_GURU64:
                 [[fallthrough]];
             case hipfftw_plan_creation_func::PLAN_GURU:
-                ret = false; // to be defined when guru apis are enabled
+                ret = false; // for now... to be defined when guru apis are enabled
                 break;
             default:
                 throw std::runtime_error("hipfftw_helper: internal error encountered (unexpected "
@@ -1323,7 +1322,7 @@ private:
     bool has_valid_distances(fft_io io) const
     {
         if(io != fft_io::fft_io_in && io != fft_io::fft_io_out)
-            throw std::invalid_argument("invalid io");
+            throw std::invalid_argument("invalid io passed to hipfftw_helper::has_valid_distances");
 
         const auto& distances = io == fft_io::fft_io_in ? idist : odist;
         bool        ret       = vector_has_valid_values_as<ptrdiff_t>(distances, batch_rank);
@@ -1344,7 +1343,7 @@ private:
             }
             const auto ifact = dft_kind == fft_transform_type_real_forward ? 1 : 2;
             const auto ofact = dft_kind == fft_transform_type_real_inverse ? 1 : 2;
-            for(size_t batch_dim = 0; ret && batch_dim < batch_rank; batch_dim++)
+            for(int batch_dim = 0; ret && batch_dim < batch_rank; batch_dim++)
                 ret = batches[batch_dim] == 1
                       || ifact * idist[batch_dim] == ofact * odist[batch_dim];
         }
@@ -1398,12 +1397,13 @@ public:
         if(rank_is_valid_for_hipfftw(rank_to_set))
         {
             if(!lengths_to_set.empty() && lengths_to_set.size() != rank_to_set)
-                throw std::invalid_argument("Inconsistent size for non-empty lengths.");
+                throw std::invalid_argument(
+                    "Inconsistent size for non-empty lengths given to hipfftw::set_creation_args.");
             for(const auto& vec : {io_nembed_to_set.inembed, io_nembed_to_set.onembed})
             {
                 if(!vec.empty() && vec.size() != rank_to_set)
-                    throw std::invalid_argument(
-                        "Inconsistent size for non-empty inembed or onembed.");
+                    throw std::invalid_argument("Inconsistent size for non-empty inembed or "
+                                                "onembed given to hipfftw::set_creation_args.");
             }
         }
 
@@ -1449,7 +1449,8 @@ public:
                 if(!vec.empty() && vec.size() != rank_to_set)
                 {
                     throw std::invalid_argument(
-                        "Inconsistent size for non-empty lengths, istrides, or ostrides.");
+                        "Inconsistent size for non-empty lengths, istrides, or ostrides given to "
+                        "hipfftw::set_creation_args.");
                 }
             }
         }
@@ -1459,8 +1460,8 @@ public:
             {
                 if(!vec.empty() && vec.size() != batch_rank_to_set)
                 {
-                    throw std::invalid_argument(
-                        "Inconsistent size for non-empty batches, idist, or odist.");
+                    throw std::invalid_argument("Inconsistent size for non-empty batches, idist, "
+                                                "or odist given to hipfftw::set_creation_args.");
                 }
             }
         }
@@ -1518,12 +1519,14 @@ public:
     std::vector<T> get_strides_as(fft_io io) const
     {
         if(io != fft_io::fft_io_in && io != fft_io::fft_io_out)
-            throw std::invalid_argument("invalid io");
+            throw std::invalid_argument("invalid io passed to hipfftw_helper::get_strides_as");
         const std::vector<ptrdiff_t>& strides = io == fft_io::fft_io_in ? istrides : ostrides;
         return convert_vector_to<T>(strides);
     }
     const decltype(istrides)& get_strides(fft_io io) const
     {
+        if(io != fft_io::fft_io_in && io != fft_io::fft_io_out)
+            throw std::invalid_argument("invalid io passed to hipfftw_helper::get_strides");
         return io == fft_io::fft_io_in ? istrides : ostrides;
     }
 
@@ -1544,7 +1547,7 @@ public:
     std::vector<T> get_distances_as(fft_io io) const
     {
         if(io != fft_io::fft_io_in && io != fft_io::fft_io_out)
-            throw std::invalid_argument("invalid io");
+            throw std::invalid_argument("invalid io passed to hipfftw_helper::get_distances_as");
         const std::vector<ptrdiff_t>& dist = io == fft_io::fft_io_in ? idist : odist;
         return convert_vector_to<T>(dist);
     }
@@ -1553,13 +1556,13 @@ public:
     T get_dist_as(fft_io io) const
     {
         if(io != fft_io::fft_io_in && io != fft_io::fft_io_out)
-            throw std::invalid_argument("invalid io");
+            throw std::invalid_argument("invalid io passed to hipfftw_helper::get_dist_as");
         auto const tmp = get_distances_as<T>(io);
         if(tmp.empty())
             throw std::runtime_error("distance(s) cannot be safely converted to the desired type");
         if(tmp.size() != 1)
             throw std::runtime_error(
-                "a single distance value cannot be queried for multi-batched cases");
+                "a single distance value cannot be queried for multi-dimensional batch cases");
         return tmp[0];
     }
 
@@ -1574,7 +1577,7 @@ public:
         auto const tmp = get_batches_as<T>();
         if(tmp.size() != 1)
             throw std::runtime_error(
-                "a single batch size cannot be queried for multi-batched cases");
+                "a single batch size cannot be queried for multi-dimensional batch cases");
         return tmp[0];
     }
 
@@ -1604,7 +1607,7 @@ public:
     {
         if(!hipfftw_creation_options_are_well_defined(creation_options))
             throw std::invalid_argument(
-                "ill-defined creation_options used in can_use_creation_options");
+                "ill-defined creation_options passed to hipfftw_helper::can_use_creation_options");
         if(creation_options == hipfftw_plan_creation_func::NONE)
             return false;
         if(std::find(hipfftw_plan_creation_func_candidates.begin(),
@@ -1625,24 +1628,16 @@ public:
         switch(creation_options)
         {
         case hipfftw_plan_creation_func::PLAN_DFT_ND:
-            // only unbatched cases (making distances irrelevant)
-            if(batch_rank != 1 || batches.size() != 1 || batches[0] != 1)
-                return false;
-            // only default strides
-            if(istrides != default_strides(dft_kind, plan_placement, fft_io::fft_io_in, lengths)
-               || ostrides
-                      != default_strides(dft_kind, plan_placement, fft_io::fft_io_out, lengths))
-                return false;
-            // rank is not passed as an argument but dictated by the called function,
-            // (must be 1, 2, or 3), and as many lengths must be passed as individual
-            // integer values
-            return (rank == 1 || rank == 2 || rank == 3) && get_lengths_as<int>().size() == rank;
-            break;
+            [[fallthrough]];
         case hipfftw_plan_creation_func::PLAN_DFT:
+        {
             // only unbatched cases (making distances irrelevant)
             if(batch_rank != 1 || batches.size() != 1 || batches[0] != 1)
                 return false;
-            // only default strides if lengths are not empty
+            // no empty lengths (~> nullptr lengths) for PLAN_DFT_ND
+            if(creation_options == hipfftw_plan_creation_func::PLAN_DFT_ND && lengths.empty())
+                return false;
+            // only default strides (this check is relevant only for non-empty lengths)
             if(!lengths.empty())
             {
                 if(istrides != default_strides(dft_kind, plan_placement, fft_io::fft_io_in, lengths)
@@ -1650,14 +1645,17 @@ public:
                           != default_strides(dft_kind, plan_placement, fft_io::fft_io_out, lengths))
                     return false;
             }
-            // the lengths must be representable as integers, if not empty (supposedly
-            // intentionally, e.g., for input validation testing purposes)
-            return lengths.empty() || get_lengths_as<int>().size() == rank;
-            break;
+            if(!lengths.empty() && get_lengths_as<int>().size() != rank)
+                return false;
+            // rank is not passed as an argument but dictated by the called function
+            // (must be 1, 2, or 3) if not using PLAN_DFT
+            return creation_options == hipfftw_plan_creation_func::PLAN_DFT
+                   || (rank >= 1 && rank <= 3);
+        }
         case hipfftw_plan_creation_func::PLAN_MANY:
         {
             // batch_rank == 1 only
-            if(batch_rank != 1 || batches.size() != 1)
+            if(batch_rank != 1 || batches.size() != 1 || idist.size() != 1 || odist.size() != 1)
                 return false;
             // only strides that may be represented via inembed/onembed
             if(!io_nembed)
@@ -1665,17 +1663,14 @@ public:
             // the lengths must be representable as integers, if not empty (supposedly
             // intentionally, e.g., for input validation testing purposes)
             return lengths.empty() || get_lengths_as<int>().size() == rank;
-            break;
         }
         case hipfftw_plan_creation_func::PLAN_GURU:
             [[fallthrough]];
         case hipfftw_plan_creation_func::PLAN_GURU64:
             return false;
-            break;
         default:
             throw std::runtime_error("hipfftw_helper: internal error encountered (unexpected value "
                                      "for creation_options)");
-            break;
         }
         // unreachable
     }
@@ -1685,7 +1680,8 @@ public:
     bool is_valid_for_creation_with(hipfftw_plan_creation_func creation_options) const
     {
         if(!hipfftw_creation_options_are_well_defined(creation_options))
-            throw std::invalid_argument("invalid creation_options for is_valid_for_creation_with");
+            throw std::invalid_argument(
+                "invalid creation_options passed to hipfftw_helper::is_valid_for_creation_with");
 
         auto ret = has_valid_rank(creation_options) && has_valid_lengths() && has_valid_sign()
                    && has_valid_flags() && has_valid_batch_rank(creation_options)
@@ -1987,29 +1983,41 @@ public:
     size_t get_num_elements_in(fft_io in_or_out) const
     {
         if(in_or_out != fft_io_in && in_or_out != fft_io_out)
-            throw std::invalid_argument("invalid in_or_out for get_num_elements_in");
+            throw std::invalid_argument(
+                "invalid in_or_out passed to hipfftw_helper::get_num_elements_in");
         if(!has_valid_rank() || !has_valid_lengths() || !has_valid_batch_rank()
            || !has_valid_batches())
             throw hipfftw_helper_num_elements_calc_exception(
-                "get_num_elements_in requires valid rank, batch_rank, lengths, and batches");
+                "hipfftw_helper::get_num_elements_in requires valid rank, batch_rank, lengths, and "
+                "batches");
         const auto& strides   = in_or_out == fft_io::fft_io_in ? istrides : ostrides;
         const auto& distances = in_or_out == fft_io::fft_io_in ? idist : odist;
         if(!vector_has_valid_values_as<ptrdiff_t>(strides, rank, 0)
            || !vector_has_valid_values_as<ptrdiff_t>(distances, batch_rank, 0))
             throw hipfftw_helper_num_elements_calc_exception(
-                "get_num_elements_in assumes non-negative strides and distances.");
-        size_t last_elem_idx = 0;
+                "hipfftw_helper::get_num_elements_in assumes non-negative strides and distances.");
+        size_t elem_count = 1;
         for(auto len_dim = lengths.size(); len_dim-- > 0;)
-            last_elem_idx += (lengths[len_dim] - 1) * strides[len_dim];
+        {
+            if(((dft_kind == fft_transform_type_real_forward && in_or_out == fft_io::fft_io_out)
+                || (dft_kind == fft_transform_type_real_inverse && in_or_out == fft_io::fft_io_in))
+               && len_dim == lengths.size() - 1)
+            {
+                elem_count += (lengths[len_dim] / 2) * strides[len_dim];
+            }
+            else
+                elem_count += (lengths[len_dim] - 1) * strides[len_dim];
+        }
         for(auto batch_dim = batches.size(); batch_dim-- > 0;)
-            last_elem_idx += (batches[batch_dim] - 1) * distances[batch_dim];
-        return last_elem_idx + 1;
+            elem_count += (batches[batch_dim] - 1) * distances[batch_dim];
+        return elem_count;
     }
 
     size_t get_data_byte_size(fft_io in_or_out) const
     {
         if(in_or_out != fft_io_in && in_or_out != fft_io_out)
-            throw std::invalid_argument("invalid in_or_out for get_data_byte_size");
+            throw std::invalid_argument(
+                "invalid in_or_out passed to hipfftw_helper::get_data_byte_size");
         // for in-place, input and output data sizes are enforced equal
         std::vector<fft_io> io_range_to_consider = {in_or_out};
         if(plan_placement == fft_placement_inplace)

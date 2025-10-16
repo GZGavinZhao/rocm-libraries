@@ -284,7 +284,7 @@ namespace
         auto make_lengths = [&]() {
             if constexpr(validity_flag)
             {
-                for(int dim_idx = 0; dim_idx < ret.size(); dim_idx++)
+                for(size_t dim_idx = 0; dim_idx < ret.size(); dim_idx++)
                 {
                     auto max_len = fwd_domain_nembed[dim_idx];
                     if(is_real_inplace && dim_idx == ret.size() - 1)
@@ -303,7 +303,7 @@ namespace
         };
         auto lengths_are_valid = [&]() {
             auto check = true;
-            for(auto dim = 0; dim < ret.size() && check; dim++)
+            for(size_t dim = 0; dim < ret.size() && check; dim++)
             {
                 if(is_real_inplace && dim == ret.size() - 1)
                     check = fwd_domain_nembed[dim] >= 2 * (ret[dim] / 2 + 1) && ret[dim] > 0;
@@ -352,7 +352,7 @@ namespace
         auto make_bwd_domain_nembed = [&]() {
             if constexpr(validity_flag)
             {
-                for(int dim_idx = 0; dim_idx < ret.size(); dim_idx++)
+                for(size_t dim_idx = 0; dim_idx < ret.size(); dim_idx++)
                 {
                     ptrdiff_t max_nembed_for_dim = is_real(dft_type) && dim_idx == ret.size() - 1
                                                        ? max_nembed_fwd_domain / 2 + 1
@@ -386,7 +386,7 @@ namespace
             {
                 std::uniform_int_distribution<ptrdiff_t> nembed_rng(-max_nembed_fwd_domain,
                                                                     max_nembed_fwd_domain);
-                for(int dim_idx = 0; dim_idx < ret.size(); dim_idx++)
+                for(size_t dim_idx = 0; dim_idx < ret.size(); dim_idx++)
                 {
                     ret[dim_idx] = nembed_rng(get_pseudo_rng());
                     if(is_real(dft_type) && dim_idx == ret.size() - 1)
@@ -397,7 +397,7 @@ namespace
         auto bwd_domain_nembed_are_valid = [&]() {
             auto       check       = true;
             const bool is_real_dft = is_real(dft_type);
-            for(auto dim = 0; dim < ret.size() && check; dim++)
+            for(size_t dim = 0; dim < ret.size() && check; dim++)
             {
                 const auto min_nembed
                     = lengths.empty() ? 0
@@ -1117,6 +1117,7 @@ namespace
             {
                 // I/O data pointers may be touched at creation. In that case,
                 // the I/O allocations must make sense and be large enough
+                // --> cannot test if I/O allocation sizes cannot be reliably calculated
                 try
                 {
                     (void)plan_helper.get_data_byte_size(fft_io::fft_io_in);

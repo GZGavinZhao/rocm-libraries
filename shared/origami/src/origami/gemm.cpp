@@ -776,25 +776,38 @@ namespace origami
 
         // 3) Total loads are loads from A and loads from B
         size_t MT_M_rounded_128bytes = round_elements_to_128B(MT_M, element_size_A);
-        size_t MT_N_rounded_128bytes = round_elements_to_128B(MT_N, element_size_A);
-        size_t MT_K_rounded_128bytes = round_elements_to_128B(MT_K, element_size_A);
-        if(!transA && !transB)
+        size_t MT_N_rounded_128bytes = round_elements_to_128B(MT_N, element_size_B);
+        size_t MT_KA_rounded_128bytes = round_elements_to_128B(MT_K, element_size_A);
+        size_t MT_KB_rounded_128bytes = round_elements_to_128B(MT_K, element_size_B);
+        
+        if(!transA && !transB) // NN M rounded, KB rounded
         {
             MT_N_rounded_128bytes = MT_N;
-            MT_K_rounded_128bytes = MT_K;
+            MT_KA_rounded_128bytes = MT_K;
         }
-        else if(transA && !transB)
+        else if(transA && !transB) // TN - K rounded
         {
             MT_M_rounded_128bytes = MT_M;
             MT_N_rounded_128bytes = MT_N;
+            if (MT_K * element_size_A < 128u * 8u)
+            {
+                MT_KA_rounded_128bytes = MT_K;
+                MT_KB_rounded_128bytes = MT_K;
+            }
         }
-        else if(!transA && transB)
+        else if(!transA && transB) // NT - M and N rounded
         {
-            MT_K_rounded_128bytes = MT_K;
+            MT_KA_rounded_128bytes = MT_K;
+            MT_KB_rounded_128bytes = MT_K;
         }
-
-        size_t Ld_A_value  = compute_A_loads(MT_M_rounded_128bytes, MT_K_rounded_128bytes);
-        size_t Ld_B_value  = compute_B_loads(MT_N_rounded_128bytes, MT_K_rounded_128bytes);
+        else // TT KA rounded, N rounded
+        {
+            MT_M_rounded_128bytes = MT_M;
+            MT_KB_rounded_128bytes = MT_K;
+        }
+        // std::cout << "after: M " << MT_M_rounded_128bytes << ", N " <<MT_N_rounded_128bytes << ", K " << MT_K_rounded_128bytes << std::endl;
+        size_t Ld_A_value  = compute_A_loads(MT_M_rounded_128bytes, MT_KA_rounded_128bytes);
+        size_t Ld_B_value  = compute_B_loads(MT_N_rounded_128bytes, MT_KB_rounded_128bytes);
         size_t Ld_CU_bytes = (Ld_A_value * safe_ceil_div(element_size_A, 8)) // A Bytes
                              + (Ld_B_value * safe_ceil_div(element_size_B, 8)); // B Bytes
 
@@ -973,8 +986,8 @@ namespace origami
         // The effective latency per useful operation increases as utilization drops.
         // This penalty affects BOTH compute and memory bounds for the tile's core work.
         double effective_tile_penalty = (utilization > 1e-9) ? (1.0 / (utilization)) : 1.0;
-        double output_utilization_penalty
-            = (output_utilization > 1e-9) ? (1.0 / (output_utilization)) : 1.0;
+        // double output_utilization_penalty
+        //     = (output_utilization > 1e-9) ? (1.0 / (output_utilization)) : 1.0;
         // 2) Work-group setup & iteration latencies
         double L_WG_setup = 1; // WG_setup_Latency
 
@@ -1003,6 +1016,7 @@ namespace origami
         L_epilogue         = L_epilogue * pow(0.95, real_occupancy); // Factor chosen empirically
         // 4') K-split reductions are globally coherent, we need to write and read split-1 MT_M*MT_N
         // tiles to coherent memory
+        double L_reduce = 0;
         if(splittingFactor > 1)
         {
             size_t n_partials = splittingFactor - 1;
@@ -1024,8 +1038,8 @@ namespace origami
             double mem_bw_occ         = compute_mem_bw_from_occupancy(hardware, numActiveCUs);
             double mem_bw_occ_limited = hardware.mem3_perf_ratio * mem_bw_occ;
 
-            double L_reduce = partial_readwrite_bytes / (mem_bw_occ_limited);
-            L_epilogue += L_reduce + partial_adds + 10000;
+            L_reduce = partial_readwrite_bytes / (mem_bw_occ_limited);
+            L_epilogue += L_reduce + partial_adds;// + 10000;
         }
         // 4'') tf32 emu has some more overhead
         double L_cvt    = 0;
@@ -1078,7 +1092,7 @@ namespace origami
         // 7) Total tile latency
         double L_tile_total
             = (L_tile_single * num_iter) + L_prologue + L_epilogue * 2 + L_WG_setup
-              + (500 * num_iter); // 7 instructions (each with 4 cycles) at the end of the loop
+              + (280 * num_iter); // 7 instructions (each with 4 cycles) at the end of the loop
 
         if(MT_K == 1024)
         {
@@ -1090,6 +1104,7 @@ namespace origami
             double problem_k_quant = ((K % MT_K) / (double)K);
             hardware.log_debug("Iteration Compute Latency", L_compute);
             hardware.log_debug("L_mem", L_mem);
+            hardware.log_debug("L_reduce", L_reduce);
             hardware.log_debug("L_cvt", L_cvt);
             hardware.log_debug("L_tile_single", L_tile_single);
             hardware.log_debug("num_iter", num_iter);
@@ -1101,7 +1116,7 @@ namespace origami
             hardware.log_debug("K quant overhead", (problem_k_quant * 50000));
             hardware.log_debug("Problem Tiile Quant", utilization);
             hardware.log_debug("Real Occupancy", utilization);
-            hardware.log_debug("Output Utilization Penalty", output_utilization_penalty);
+            // hardware.log_debug("Output Utilization Penalty", output_utilization_penalty);
             hardware.log_debug("Output Utilization", output_utilization);
             std::string bound_source;
             if(L_compute >= L_mem)
@@ -1362,8 +1377,8 @@ namespace origami
             hardware.log_debug("Output Tile Size", MT_M * MT_N);
             hardware.log_debug("Tile M/N", MT_M / MT_N);
             hardware.log_debug("Tile N/M", MT_N / MT_M);
-            hardware.log_debug("Problem M/N", MT_M / MT_N);
-            hardware.log_debug("Problem N/M", MT_N / MT_M);
+            hardware.log_debug("Problem M/N", M / N);
+            hardware.log_debug("Problem N/M", N / M);
             size_t occupancy_percent = numActiveCUs / hardware.N_CU;
             hardware.log_debug("Peak theoretical GFLOPs based on occupancy",
                                1300 * occupancy_percent);

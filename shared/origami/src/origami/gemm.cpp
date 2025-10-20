@@ -777,37 +777,32 @@ namespace origami
         // 3) Total loads are loads from A and loads from B
         size_t MT_M_rounded_128bytes = round_elements_to_128B(MT_M, element_size_A);
         size_t MT_N_rounded_128bytes = round_elements_to_128B(MT_N, element_size_B);
-        size_t MT_KA_rounded_128bytes = round_elements_to_128B(MT_K, element_size_A);
-        size_t MT_KB_rounded_128bytes = round_elements_to_128B(MT_K, element_size_B);
+        size_t MT_K_rounded_128bytes = round_elements_to_128B(MT_K, element_size_A);
         
         if(!transA && !transB) // NN M rounded, KB rounded
         {
             MT_N_rounded_128bytes = MT_N;
-            MT_KA_rounded_128bytes = MT_K;
+            MT_K_rounded_128bytes = std::min(MT_K, MT_K_rounded_128bytes);
         }
         else if(transA && !transB) // TN - K rounded
         {
             MT_M_rounded_128bytes = MT_M;
             MT_N_rounded_128bytes = MT_N;
             if (MT_K * element_size_A < 128u * 8u)
-            {
-                MT_KA_rounded_128bytes = MT_K;
-                MT_KB_rounded_128bytes = MT_K;
-            }
+                MT_K_rounded_128bytes = MT_K;
         }
         else if(!transA && transB) // NT - M and N rounded
         {
-            MT_KA_rounded_128bytes = MT_K;
-            MT_KB_rounded_128bytes = MT_K;
+            MT_K_rounded_128bytes = MT_K;
         }
         else // TT KA rounded, N rounded
         {
             MT_M_rounded_128bytes = MT_M;
-            MT_KB_rounded_128bytes = MT_K;
+            MT_K_rounded_128bytes = std::min(MT_K, MT_K_rounded_128bytes);
         }
         // std::cout << "after: M " << MT_M_rounded_128bytes << ", N " <<MT_N_rounded_128bytes << ", K " << MT_K_rounded_128bytes << std::endl;
-        size_t Ld_A_value  = compute_A_loads(MT_M_rounded_128bytes, MT_KA_rounded_128bytes);
-        size_t Ld_B_value  = compute_B_loads(MT_N_rounded_128bytes, MT_KB_rounded_128bytes);
+        size_t Ld_A_value  = compute_A_loads(MT_M_rounded_128bytes, MT_K_rounded_128bytes);
+        size_t Ld_B_value  = compute_B_loads(MT_N_rounded_128bytes, MT_K_rounded_128bytes);
         size_t Ld_CU_bytes = (Ld_A_value * safe_ceil_div(element_size_A, 8)) // A Bytes
                              + (Ld_B_value * safe_ceil_div(element_size_B, 8)); // B Bytes
 

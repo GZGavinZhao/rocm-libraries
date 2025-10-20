@@ -283,20 +283,20 @@ namespace origami
             });
 
         // 2) Collect results that tie for the absolute best latency.
-        double best_latency = std::get<0>(valid_results.front());
-        size_t num_the_same = 0;
+        // double best_latency = std::get<0>(valid_results.front());
+        // size_t num_the_same = 0;
 
-        // Count the number of similar latencies
-        for(const auto& res : valid_results)
-        {
-            double diff = std::fabs(std::get<0>(res) - best_latency);
-            diff /= best_latency;
-            // If it's within 1%, include it.
-            if(diff < 0.01)
-                num_the_same++;
-            else
-                break; // Once we pass best_latency, we can stop.
-        }
+        // // Count the number of similar latencies
+        // for(const auto& res : valid_results)
+        // {
+        //     double diff = std::fabs(std::get<0>(res) - best_latency);
+        //     diff /= best_latency;
+        //     // If it's within 1%, include it.
+        //     if(diff < 0.01)
+        //         num_the_same++;
+        //     else
+        //         break; // Once we pass best_latency, we can stop.
+        // }
         // 3) If that tie group has at least 10 entries, we only use those.
         // 4) Otherwise, keep adding the next best latencies until we have 10 total or run out.
         // std::vector<result_tuple> top_candidates = tie_results;
@@ -313,7 +313,7 @@ namespace origami
         // or the top 10 latencies overall (including however many best-latency entries there were).
 
         // Finally, use your existing tie-breaker on top_candidates
-        pick_best_tile_by_arithmetic_intensity(valid_results, num_the_same);
+        // pick_best_tile_by_arithmetic_intensity(valid_results, num_the_same);
         if(print)
         {
             for(const auto& tile : valid_results)

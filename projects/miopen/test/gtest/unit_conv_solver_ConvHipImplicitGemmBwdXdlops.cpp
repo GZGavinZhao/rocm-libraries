@@ -46,6 +46,10 @@ auto GetConvSmokeTestCases(miopenDataType_t datatype)
         TestCase{{datatype, miopenTensorNHWC, {1, 32, 8, 8}},
                  {datatype, miopenTensorNHWC, {32, 32, 1, 1}},
                  datatype, {{0, 0}, {1, 1}, {1, 1}}},
+// Deterministic test case (should also run GPU smoke test)
+                TestCase{{datatype, miopenTensorNHWC, {1, 32, 8, 8}},
+                 {datatype, miopenTensorNHWC, {32, 32, 1, 1}},
+                 datatype, {{0, 0}, {1, 1}, {1, 1}, 1, true}},
         // clang-format on
     };
 }

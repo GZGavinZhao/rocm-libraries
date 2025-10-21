@@ -35,6 +35,10 @@ auto GetConvTestCases(miopenDataType_t datatype)
     return std::vector{
         // clang-format off
         TestCase{{1, 1, 44, 44}, {1, 1, 11, 11}, {0, 0}, {4, 4}, {1, 1}, datatype},
+        // Deterministic version (uses ConvolutionDescriptorParams deterministic flag)
+        TestCase{{datatype, {1, 1, 44, 44}},
+                 {datatype, {1, 1, 11, 11}},
+                 datatype, {{0, 0}, {4, 4}, {1, 1}, 1, true}},
         // clang-format on
     };
 }

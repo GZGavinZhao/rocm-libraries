@@ -50,12 +50,14 @@ def runDbSyncJob(def utils)
 {
     script {
         withWorkingDir {
-            utils.buildHipClangJob(dvc_pull: true,
-                                setup_flags: "-DMIOPEN_TEST_DBSYNC=1",
-                                make_targets: 'test_db_sync',
-                                execute_cmd: './bin/test_db_sync',
-                                needs_gpu:false,
-                                build_install: true)
+            catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                utils.buildHipClangJob(dvc_pull: true,
+                                    setup_flags: "-DMIOPEN_TEST_DBSYNC=1",
+                                    make_targets: 'test_db_sync',
+                                    execute_cmd: './bin/test_db_sync',
+                                    needs_gpu:false,
+                                    build_install: true)
+            }
         }
     }
 }
@@ -65,11 +67,13 @@ def runBuildAndSingleGtestJob(def utils, def flags, def build_timeout_minutes=42
     script {
         withWorkingDir {
             def single_gtest_flags = " -DMIOPEN_TEST_DISCRETE=OFF -DGTEST_PARALLEL_LEVEL=4 "
-            utils.buildHipClangJob(
-                setup_flags: single_gtest_flags + flags, 
-                build_cmd: "LLVM_PATH=/opt/rocm/llvm CTEST_PARALLEL_LEVEL=4 make -j\$(nproc) install miopen_gtest check",
-                build_install:true,
-                build_timeout:build_timeout_minutes)
+            catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                utils.buildHipClangJob(
+                    setup_flags: single_gtest_flags + flags, 
+                    build_cmd: "LLVM_PATH=/opt/rocm/llvm CTEST_PARALLEL_LEVEL=4 make -j\$(nproc) install miopen_gtest check",
+                    build_install:true,
+                    build_timeout:build_timeout_minutes)
+            }
         }
     }
 }
@@ -683,7 +687,9 @@ pipeline {
                     steps{
                         script {
                             withWorkingDir {
-                                utils.buildHipClangJob( build_type: 'debug', setup_flags: NOMLIR_flags, build_cmd: NOMLIR_build_cmd, test_flags: ' --verbose ', build_install: true)
+                                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                                    utils.buildHipClangJob( build_type: 'debug', setup_flags: NOMLIR_flags, build_cmd: NOMLIR_build_cmd, test_flags: ' --verbose ', build_install: true)
+                                }
                             }
                         }
                     }
@@ -753,7 +759,9 @@ pipeline {
                     steps{
                         script {
                             withWorkingDir {
-                                utils.buildHipClangJob(make_targets: make_targets, execute_cmd: execute_cmd, find_mode: "Normal", build_install: true)
+                                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                                    utils.buildHipClangJob(make_targets: make_targets, execute_cmd: execute_cmd, find_mode: "Normal", build_install: true)
+                                }
                             }
                         }
                     }
@@ -779,7 +787,9 @@ pipeline {
                     steps{
                         script {
                             withWorkingDir {
-                                utils.buildHipClangJob( make_targets: make_targets, execute_cmd: execute_cmd, build_install: true)
+                                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                                    utils.buildHipClangJob( make_targets: make_targets, execute_cmd: execute_cmd, build_install: true)
+                                }
                             }
                         }
                     }
@@ -801,7 +811,9 @@ pipeline {
                     steps{
                         script {
                             withWorkingDir {
-                                utils.buildHipClangJob(make_targets: Smoke_targets, setup_flags: "-DMIOPEN_USE_SQLITE_PERF_DB=On", build_install: true)
+                                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                                    utils.buildHipClangJob(make_targets: Smoke_targets, setup_flags: "-DMIOPEN_USE_SQLITE_PERF_DB=On", build_install: true)
+                                }
                             }
                         }
                     }
@@ -823,9 +835,11 @@ pipeline {
                     steps{
                         script {
                             withWorkingDir {
-                                utils.buildHipClangJob(setup_flags: "-DMIOPEN_ENABLE_FIN_INTERFACE=On",
+                                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                                    utils.buildHipClangJob(setup_flags: "-DMIOPEN_ENABLE_FIN_INTERFACE=On",
                                                             make_targets: "test_unit_FinInterface",
                                                             execute_cmd: "bin/test_unit_FinInterface")
+                                }
                             }
                         }
                     }
@@ -847,7 +861,9 @@ pipeline {
                     steps{
                         script {
                             withWorkingDir {
-                                utils.buildHipClangJob(build_type: 'debug', make_targets: Smoke_targets, build_install: true)
+                                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                                    utils.buildHipClangJob(build_type: 'debug', make_targets: Smoke_targets, build_install: true)
+                                }
                             }
                         }
                     }
@@ -869,7 +885,9 @@ pipeline {
                     steps{
                         script {
                             withWorkingDir {
-                                utils.buildHipClangJob(build_type: 'debug', make_targets: Smoke_targets, build_install: true)
+                                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                                    utils.buildHipClangJob(build_type: 'debug', make_targets: Smoke_targets, build_install: true)
+                                }
                             }
                         }
                     }
@@ -891,7 +909,9 @@ pipeline {
                     steps{
                         script {
                             withWorkingDir {
-                                utils.buildHipClangJob(build_type: 'debug', make_targets: Smoke_targets, build_install: true)
+                                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                                    utils.buildHipClangJob(build_type: 'debug', make_targets: Smoke_targets, build_install: true)
+                                }
                             }
                         }
                     }

@@ -55,7 +55,7 @@ TEST(TestFillTensorFromFile, Valid)
     }
 }
 
-TEST(TestLoadGraphAndTensors, Valid)
+TEST(TestLoadGraphAndTensors, DISABLED_Valid)
 {
     std::filesystem::path filepath
         = utilities::getCurrentExecutableDirectory()

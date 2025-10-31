@@ -165,6 +165,11 @@ namespace TensileLite
         return m_disableStaggerU;
     }
 
+    std::vector<int32_t> Debug::getSelectedMT() const
+    {
+        return m_selectedMT;
+    }
+
     Debug::Debug()
         : m_value(DEBUG_SM)
         , m_value2(DEBUG_SM2)
@@ -231,6 +236,16 @@ namespace TensileLite
         const char* tensile_disable_staggerU = std::getenv("TENSILE_DISABLE_STAGGERU");
         if(tensile_disable_staggerU)
             m_disableStaggerU = strtol(tensile_disable_staggerU, nullptr, 0) != 0;
+        
+        const char* tensile_select_macrotile = std::getenv("TENSILE_SOLUTION_MACROTILE");
+        if(tensile_select_macrotile) {
+            std::stringstream mtstr(tensile_select_macrotile);
+            for (int32_t mtval; mtstr >> mtval;) {
+                m_selectedMT.push_back(mtval);    
+                if (mtstr.peek() == 'x')
+                    mtstr.ignore();
+            }  
+        }  
     }
 
 } // namespace TensileLite

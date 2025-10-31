@@ -164,7 +164,22 @@ namespace TensileLite
             };
             SolutionVector<MySolution> solutions
                 = table->findTopMatch(problem, transform, numSolutions);
-
+            
+            auto selectedMT = Debug::Instance().getSelectedMT();
+            if (selectedMT.size() > 2) {
+                std::cout << "Input MT " << selectedMT[0] << ", " << selectedMT[1] << ", " << selectedMT[2] << std::endl;
+                SolutionVector<MySolution> rv;
+                for(auto const& row : solutions)
+                {
+                    auto params = row->sizeMapping;
+                    std::cout << params.macroTile.x << ", " << params.macroTile.y << ", " << params.depthU << std::endl;
+                    if((params.macroTile.x==selectedMT[0]) & (params.macroTile.y==selectedMT[1]) & (params.depthU==selectedMT[2]))
+                    {
+                        rv.emplace_back(row);
+                    }
+                }
+                return rv;
+            }
             if(Debug::Instance().printLibraryLogicIndex())
             {
                 if(!solutions.empty()) {

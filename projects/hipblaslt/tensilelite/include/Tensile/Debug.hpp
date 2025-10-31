@@ -28,6 +28,8 @@
 
 #include <cstdlib>
 #include <string>
+#include <vector>
+#include <sstream>
 #ifdef Tensile_ENABLE_MARKER
 #include <roctracer/roctx.h>
 #endif
@@ -84,6 +86,8 @@ namespace TensileLite
 
         bool disableStaggerU() const;
 
+        std::vector<int32_t> getSelectedMT() const;
+
         __attribute__((always_inline)) inline void markerStart(const char* name) const
         {
 #ifdef Tensile_ENABLE_MARKER
@@ -133,6 +137,7 @@ namespace TensileLite
         bool        m_gridbasedBatchExp   = false;
         bool        m_printMarker         = false;
         bool        m_disableStaggerU     = false;
+        std::vector<int32_t> m_selectedMT = {};
 
         Debug();
     };

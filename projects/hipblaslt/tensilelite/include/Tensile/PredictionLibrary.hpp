@@ -98,14 +98,12 @@ namespace TensileLite
             SolutionSet<MySolution> rv;
             if(searchType == SolutionLibrarySearchType::DEFAULT)
                 return rv;
-
             for(auto const& row : this->solutionmap)
             {
                 if(debug)
                     std::cout << row.second->description() << std::endl;
                 rv.insert(row.second);
-            }
-
+            } 
             return rv;
         }
 
@@ -134,7 +132,24 @@ namespace TensileLite
                                                             Hardware const&  hardware,
                                                             int numSolutions) const override
         {
+            std::cout << "findTop - Selected macrotile " << std::endl;
+
             SolutionVector<MySolution> rv;
+            auto selectedMT = Debug::Instance().getSelectedMT();
+            
+            if (selectedMT.size() > 2) {
+                std::cout << "Input MT " << selectedMT[0] << ", " << selectedMT[1] << ", " << selectedMT[2] << std::endl;
+                for(auto const& row : this->solutionmap)
+                {
+                    auto params = row.second->sizeMapping;
+                    std::cout << params.macroTile.x << ", " << params.macroTile.y << ", " << params.depthU << std::endl;
+                    if((params.macroTile.x==selectedMT[0]) & (params.macroTile.y==selectedMT[1]) & (params.depthU==selectedMT[2]))
+                    {
+                        rv.emplace_back(row.second);
+                    }
+                }
+            }
+            return rv;
             size_t                     m     = 1;
             size_t                     n     = 1;
             size_t                     k     = 1;

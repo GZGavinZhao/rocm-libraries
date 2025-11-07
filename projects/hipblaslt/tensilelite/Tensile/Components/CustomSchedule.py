@@ -273,6 +273,7 @@ def hasCustomSchedule(kernel):
     is256x256x64DTL  = [MT0, MT1, DU, PGR, PLR, DTL] == [256, 256, 64, 2, 1, True]
     is192x256x64DTL  = [MT0, MT1, DU, PGR, PLR, DTL] == [192, 256, 64, 2, 1, True]
     is256x256x128DTL = [MT0, MT1, DU, PGR, PLR, DTL] == [256, 256, 128, 2, 0, True]
+    is256x192x64DTL = [MT0, MT1, DU, PGR, PLR, DTL] == [256, 192, 64, 2, 1, True]
 
 
     transA = kernel["ProblemType"]["TransposeA"]
@@ -513,6 +514,57 @@ def hasCustomSchedule(kernel):
                         SWaitCnt(dscnt=0, vlcnt=-1, vscnt=-1, comment="Wait for LRB0 to complete"),]
 
         else:
+            return False, None
+
+        numMfma = 96
+        opt1 = ScheduleInfo(2, numMfma, optSchedule, syncCode)
+        return True, opt1
+    elif is256x192x64DTL and is16bit and not isMixed and ([GRVWA, GRVWB, LRVW] == [8, 8, 8]) and MI == [16,16,32,1] and MIWG == [2,2]:
+
+        kernel["MfmaInitCVgprs"] = True
+
+        optSchedule = dict()
+        syncCode = []
+        if isNT and not useLDSTr and TLDS == 0:
+            # kernel["UsePLRPack"] = True
+            optSchedule = {
+                'SYNC'    : [[20,21,23,25,27,29,31,33,46,57,58,94],
+                             [20,21,24,26,28,30,32,34,47,58,58,94]],
+                'GRIncA' : [[0,1,2,3,4,5,6,7,8]],
+                'GRIncB' : [[9,10,11,12,13,14,15,16,17]],
+                'LRB0'    : [[0,0,1,1,2,2,6,8],
+                             [3,3,4,4,5,5,7,9]],
+                'LRA0'    : [[10,12,14,16,18,23,35,37,39,41,43,45],
+                             [11,13,15,17,19,22,36,38,40,42,44,46]],
+                'LWA'     : [[23,25,27,29,31,33],
+                             [24,26,28,30,32,34]],
+                'GRA'     : [[22,22,24,24,26,26,28,28,30,30, 42,42,43,43,45,45],
+                             [23,23,25,25,27,27,29,29,31,31, 43,43,44,44,46,46]],
+                'GRB'     : [[54, 56, 58, 60, 62, 64],
+                             [55, 57, 59, 61, 63, 65]],
+                'LRSA'   : [[47]],
+                'LRSB'   : [[37]],
+                'LWSB'   : [[47]], # For B
+                'LWSA'   : [[52]], # For A
+                'LRB1'    : [[59,59,61,61,63,63,65,67],
+                             [60,60,62,62,64,64,66,68]],
+                'LRA1'    : [[69,71,73,75,77,79,81,83,85,85,87,87],
+                             [70,72,74,76,78,80,82,84,86,86,88,88]],
+                'LCC'    : [[95, 95]],
+            }
+            syncCode = [SWaitCnt(dscnt=5, vlcnt=-1, vscnt=-1, comment="Wait for LRB0 to complete"),
+                        SBarrier(comment=""),
+                        SWaitCnt(dscnt=-1, vlcnt=5, vscnt=-1, comment="Wait for LRB0 to complete"),
+                        SWaitCnt(dscnt=-1, vlcnt=5, vscnt=-1, comment="Wait for LRB0 to complete"),
+                        SWaitCnt(dscnt=-1, vlcnt=5, vscnt=-1, comment="Wait for LRB0 to complete"),
+                        SWaitCnt(dscnt=-1, vlcnt=5, vscnt=-1, comment="Wait for LRB0 to complete"),
+                        SWaitCnt(dscnt=-1, vlcnt=5, vscnt=-1, comment="Wait for LRB0 to complete"),
+                        SWaitCnt(dscnt=-1, vlcnt=5, vscnt=-1, comment="Wait for LRB0 to complete"),
+                        SWaitCnt(dscnt=0, vlcnt=-1, vscnt=-1, comment="Wait for LRB0 to complete"),
+                        SWaitCnt(dscnt=-1, vlcnt=10, vscnt=-1, comment="Wait for LRB0 to complete"),
+                        SBarrier(comment=""),
+                        SWaitCnt(dscnt=0, vlcnt=-1, vscnt=-1, comment="Wait for LRB0 to complete"),]
+            else:
             return False, None
 
         numMfma = 96

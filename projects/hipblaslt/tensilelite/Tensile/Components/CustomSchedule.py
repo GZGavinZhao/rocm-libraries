@@ -564,7 +564,7 @@ def hasCustomSchedule(kernel):
                         SWaitCnt(dscnt=-1, vlcnt=10, vscnt=-1, comment="Wait for LRB0 to complete"),
                         SBarrier(comment=""),
                         SWaitCnt(dscnt=0, vlcnt=-1, vscnt=-1, comment="Wait for LRB0 to complete"),]
-            else:
+        else:
             return False, None
 
         numMfma = 96

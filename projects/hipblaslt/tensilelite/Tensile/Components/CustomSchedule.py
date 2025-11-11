@@ -525,45 +525,69 @@ def hasCustomSchedule(kernel):
 
         optSchedule = dict()
         syncCode = []
-        if isNT and not useLDSTr and TLDS == 0:
-            # kernel["UsePLRPack"] = True
+        if isNT and TLDS == 0:
+            
+            # default schedule passes with and without this
+            # Enabling affects performance slightly, time = 111 -> 112, gflops -> 10k drop 
+            # kernel["UsePLRPack"] = True 
+            
+            # - LDSTrInst: [1] # Passes
+            # Passing kernel - /home/aramalin/rocm-libraries/projects/hipblaslt/tensilelite/gemm_builds/1_BenchmarkProblems/Cijk_Ailk_Bjlk_BBS_BH_Bias_B_HA_S_SAV_UserArgs_00/00_Final/source/build_tmp/SOURCE/assembly/Cijk_Ailk_Bjlk_BBS_BH_Bias_B_HA_S_SAV_UserArgs_MA5Ri8iS8X2ZwXboEt3qaLLGlklf23WZx0k6fjCYtEaA=.s
+            
             optSchedule = {
-                'SYNC'    : [[20,21,23,25,27,29,31,33,46,57,58,94],
-                             [20,21,24,26,28,30,32,34,47,58,58,94]],
-                'GRIncA' : [[0,1,2,3,4,5,6,7,8]],
-                'GRIncB' : [[9,10,11,12,13,14,15,16,17]],
-                'LRB0'    : [[0,0,1,1,2,2,6,8],
-                             [3,3,4,4,5,5,7,9]],
-                'LRA0'    : [[10,12,14,16,18,23,35,37,39,41,43,45],
-                             [11,13,15,17,19,22,36,38,40,42,44,46]],
-                'LWA'     : [[23,25,27,29,31,33],
-                             [24,26,28,30,32,34]],
-                'GRA'     : [[22,22,24,24,26,26,28,28,30,30, 42,42,43,43,45,45],
-                             [23,23,25,25,27,27,29,29,31,31, 43,43,44,44,46,46]],
-                'GRB'     : [[54, 56, 58, 60, 62, 64],
-                             [55, 57, 59, 61, 63, 65]],
+                'SYNC'   : [[0, 21,21, 48, 79,79]],
+                'LRA0'   : [[1, 2,2, 3,3, 4,4, 5,5, 6,6, 7,7, 8,8, 9]],
+                'LRB0'   : [[1, 9, 10,10, 11,11, 12,12, 13,13, 14,14]],
+                'GRIncA' : [[1,1,1, 2,2,2, 3,3,3]],
+                'GRIncB' : [[4,4,4, 5,5,5, 6,6,6]],
+                'GRA'    : [[21,21, 25,25, 29,29, 34,34, 38,38, 42,42, 47,47, 51,51]],
                 'LRSA'   : [[47]],
-                'LRSB'   : [[37]],
-                'LWSB'   : [[47]], # For B
-                'LWSA'   : [[52]], # For A
-                'LRB1'    : [[59,59,61,61,63,63,65,67],
-                             [60,60,62,62,64,64,66,68]],
-                'LRA1'    : [[69,71,73,75,77,79,81,83,85,85,87,87],
-                             [70,72,74,76,78,80,82,84,86,86,88,88]],
+                'LRSB'   : [[47]],
+                'GRB'    : [[55,55, 60,60, 64,64, 68,68, 73,73, 77,77]],
+                'LWSA'   : [[77]],
+                'LWSB'   : [[77]],
+                'LRA1'   : [[80, 81,81, 82,82, 83,83, 84,84, 85,85, 86,86, 87,87, 88]],
+                'LRB1'   : [[80, 88, 89,89, 90,90, 91,91, 92,92, 93,93]],
                 'LCC'    : [[95, 95]],
             }
-            syncCode = [SWaitCnt(dscnt=5, vlcnt=-1, vscnt=-1, comment="Wait for LRB0 to complete"),
-                        SBarrier(comment=""),
-                        SWaitCnt(dscnt=-1, vlcnt=5, vscnt=-1, comment="Wait for LRB0 to complete"),
-                        SWaitCnt(dscnt=-1, vlcnt=5, vscnt=-1, comment="Wait for LRB0 to complete"),
-                        SWaitCnt(dscnt=-1, vlcnt=5, vscnt=-1, comment="Wait for LRB0 to complete"),
-                        SWaitCnt(dscnt=-1, vlcnt=5, vscnt=-1, comment="Wait for LRB0 to complete"),
-                        SWaitCnt(dscnt=-1, vlcnt=5, vscnt=-1, comment="Wait for LRB0 to complete"),
-                        SWaitCnt(dscnt=-1, vlcnt=5, vscnt=-1, comment="Wait for LRB0 to complete"),
-                        SWaitCnt(dscnt=0, vlcnt=-1, vscnt=-1, comment="Wait for LRB0 to complete"),
-                        SWaitCnt(dscnt=-1, vlcnt=10, vscnt=-1, comment="Wait for LRB0 to complete"),
-                        SBarrier(comment=""),
-                        SWaitCnt(dscnt=0, vlcnt=-1, vscnt=-1, comment="Wait for LRB0 to complete"),]
+
+            syncCode = [
+                SWaitCnt(dscnt=0, vlcnt=-1, vscnt=-1, comment="wait for prior local read local write old=0, new=0 newLW=0 newLR=0 for iteration == 0"),
+                SWaitCnt(dscnt=0, vlcnt=-1, vscnt=-1, comment=""),
+                SBarrier(comment=""),
+                SWaitCnt(dscnt=0, vlcnt=-1, vscnt=-1, comment="wait for prior local read local write old=0, new=0 newLW=0 newLR=0"),
+                SWaitCnt(dscnt=-1, vlcnt=14, vscnt=-1, comment="wait for previous set of global reads"),
+                SBarrier(comment="")
+            ]
+            
+            # - LDSTrInst: [0] # Fails
+            
+            # optSchedule = {
+            #     'SYNC'   : [[0, 24, 24, 48, 74, 74]],
+            #     'LRA0'   : [[1, 2, 3, 4, 5, 6, 7, 8]],
+            #     'GRIncA' : [[1, 1, 1, 2, 2, 2, 3, 3, 3]],
+            #     'GRIncB' : [[4, 4, 4, 5, 5, 5, 6, 6, 6]],
+            #     'LRB0'   : [[9, 9, 10, 10, 11, 11, 12, 12, 13, 13, 14, 14, 15, 15, 16, 16, 17, 17, 18, 18, 19, 19, 20, 20]],
+            #     'GRA'    : [[24, 24, 27, 27, 31, 31, 35, 35, 38, 38, 42, 42, 46, 46, 49, 49]],
+            #     'LRSA'   : [[47]],
+            #     'LRSB'   : [[47]],
+            #     'GRB'    : [[53, 53, 57, 57, 61, 61, 64, 64, 68, 68, 72, 72]],
+            #     'LWSA'   : [[72]],
+            #     'LWSB'   : [[72]],
+            #     'LRA1'   : [[75, 75, 76, 76, 77, 77, 78, 78]],
+            #     'LRB1'   : [[79, 79, 80, 80, 81, 81, 82, 82, 83, 83, 84, 84, 85, 85, 86, 86, 87, 87, 88, 88, 89, 89, 90, 90]],
+            #     'LCC'    : [[95, 95]],
+            # }
+
+            # syncCode = [
+            #     SWaitCnt(dscnt=0, vlcnt=-1, vscnt=-1, comment="wait for prior local read local write old=0, new=0 newLW=0 newLR=0 for iteration == 0"),
+            #     SWaitCnt(dscnt=0, vlcnt=-1, vscnt=-1, comment=""),
+            #     SBarrier(comment=""),
+            #     SWaitCnt(dscnt=0, vlcnt=-1, vscnt=-1, comment="wait for prior local read local write old=0, new=0 newLW=0 newLR=0"),
+            #     SWaitCnt(dscnt=-1, vlcnt=14, vscnt=-1, comment="wait for previous set of global reads"),
+            #     SBarrier(comment="")
+            # ]
+
         else:
             return False, None
 

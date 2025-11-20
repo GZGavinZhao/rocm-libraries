@@ -24,6 +24,8 @@
  *
  *******************************************************************************/
 
+#include <string>
+#include <cstring>
 #include <Tensile/AMDGPU.hpp>
 #include <Tensile/hip/HipHardware.hpp>
 #include <Tensile/hip/HipUtils.hpp>
@@ -71,6 +73,27 @@ namespace Tensile
                                           deviceId));
             }
 #endif
+            std::string archName(prop.gcnArchName);
+            size_t pos = std::string::npos;
+            if((pos = archName.find("gfx103")) != std::string::npos)
+            {
+                std::strcpy(prop.gcnArchName, "gfx1030");
+            }
+            else if((pos = archName.find("gfx101")) != std::string::npos)
+            {
+                std::strcpy(prop.gcnArchName, "gfx1010");
+            }
+            else if((pos = archName.find("gfx90")) != std::string::npos)
+            {
+                constexpr int cmpIdx = std::char_traits<char>::length("gfx90");
+                if (pos + cmpIdx < archName.size())
+                {
+                    if(archName.at(pos + cmpIdx) == '2' || archName.at(pos + cmpIdx) == '9' || archName.at(pos + cmpIdx) == 'c')
+                    {
+                        std::strcpy(prop.gcnArchName, "gfx900");
+                    }
+                }
+            }
 
             return GetDevice(prop);
         }

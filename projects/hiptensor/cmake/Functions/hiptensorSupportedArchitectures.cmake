@@ -3,6 +3,8 @@ set(SUPPORTED_ARCHITECTURES
     gfx90a
     gfx942
     gfx950
+    gfx1150
+    gfx1151
 )
 
 function(hiptensor_is_supported_architecture ARCHITECTURE_NAME RESULT_VAR)

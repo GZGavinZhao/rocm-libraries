@@ -62,9 +62,18 @@ namespace hiptensor
         {
             mGcnArch = hipGcnArch_t::GFX950;
         }
+        else if(deviceName.find("gfx1150") != std::string::npos)
+        {
+            mGcnArch = hipGcnArch_t::GFX1150;
+        }
+        else if(deviceName.find("gfx1151") != std::string::npos)
+        {
+            mGcnArch = hipGcnArch_t::GFX1151;
+        }
 
         switch(mProps.warpSize)
         {
+        case hipWarpSize_t::Wave32:
         case hipWarpSize_t::Wave64:
             mWarpSize = mProps.warpSize;
         default:;
@@ -105,10 +114,15 @@ namespace hiptensor
         {
             auto device = HipDevice();
 
-            if((device.getGcnArch() == HipDevice::hipGcnArch_t::UNSUPPORTED_ARCH)
-               || (device.warpSize() == HipDevice::hipWarpSize_t::UNSUPPORTED_WARP_SIZE))
+            if(device.getGcnArch() == HipDevice::hipGcnArch_t::UNSUPPORTED_ARCH)
             {
                 std::cerr << "Cannot proceed: unsupported host device detected. Exiting."
+                          << std::endl;
+                exit(EXIT_FAILURE);
+            }
+            else if(device.warpSize() == HipDevice::hipWarpSize_t::UNSUPPORTED_WARP_SIZE)
+            {
+                std::cerr << "Cannot proceed: unsupported warp size detected. Exiting."
                           << std::endl;
                 exit(EXIT_FAILURE);
             }

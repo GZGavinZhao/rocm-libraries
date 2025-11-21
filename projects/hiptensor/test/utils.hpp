@@ -125,7 +125,9 @@ inline bool isF32Supported()
     return (deviceName.find("gfx908") != std::string::npos)
            || (deviceName.find("gfx90a") != std::string::npos)
            || (deviceName.find("gfx942") != std::string::npos)
-           || (deviceName.find("gfx950") != std::string::npos);
+           || (deviceName.find("gfx950") != std::string::npos)
+           || (deviceName.find("gfx1150") != std::string::npos)
+           || (deviceName.find("gfx1151") != std::string::npos);
 }
 
 inline bool isF64Supported()

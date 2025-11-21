@@ -35,6 +35,8 @@ namespace hiptensor
 /// HIPTENSOR_ARCH_GFX90a
 /// HIPTENSOR_ARCH_GFX942
 /// HIPTENSOR_ARCH_GFX950
+/// HIPTENSOR_ARCH_GFX1150
+/// HIPTENSOR_ARCH_GFX1151
 #if defined(__gfx908__)
 #define HIPTENSOR_ARCH_GFX908 __gfx908__
 #elif defined(__gfx90a__)
@@ -43,6 +45,10 @@ namespace hiptensor
 #define HIPTENSOR_ARCH_GFX942 __gfx942__
 #elif defined(__gfx950__)
 #define HIPTENSOR_ARCH_GFX950 __gfx950__
+#elif defined(__gfx1150__)
+#define HIPTENSOR_ARCH_GFX1150 __gfx1150__
+#elif defined(__gfx1151__)
+#define HIPTENSOR_ARCH_GFX1151 __gfx1151__
 #else
 #define HIPTENSOR_ARCH_HOST 1
 #endif
@@ -58,6 +64,12 @@ namespace hiptensor
 #endif
 #if !defined(HIPTENSOR_ARCH_GFX950)
 #define HIPTENSOR_ARCH_GFX950 0
+#endif
+#if !defined(HIPTENSOR_ARCH_GFX1150)
+#define HIPTENSOR_ARCH_GFX1150 0
+#endif
+#if !defined(HIPTENSOR_ARCH_GFX1151)
+#define HIPTENSOR_ARCH_GFX1151 0
 #endif
 #if !defined(HIPTENSOR_ARCH_HOST)
 #define HIPTENSOR_ARCH_HOST 0

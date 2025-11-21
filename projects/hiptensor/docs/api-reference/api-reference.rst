@@ -26,6 +26,14 @@ List of supported CDNA architectures:
 
     gfx942+ = gfx942, gfx950
 
+List of supported RDNA architectures:
+
+* gfx1150
+* gfx1151
+
+.. note::
+    gfx115X = gfx1150, gfx1151
+
 .. _hiptensor-supported-data-types:
 
 Supported data types
@@ -61,7 +69,7 @@ Data Types **<Ti / To / Tc>** = <Input type / Output Type / Compute Type>, where
 | Contraction         +------------------------------+  gfx90a             |                     |
 | (Scale, bilinear)   |     bf16 / bf16 / f32        |  gfx942+            | 3m3n3k (Rank6)      |
 |                     +------------------------------+                     |                     |
-|                     |     f32 / f32 / f32          |                     | 4m4n4k (Rank8)      |
+|                     |     f32 / f32 / f32          |  gfx115X            | 4m4n4k (Rank8)      |
 |                     +------------------------------+                     |                     |
 |                     |     f32 / f32 / f16          |                     | 5m5n5k (Rank10)     |
 |                     +------------------------------+                     |                     |
@@ -79,13 +87,13 @@ Data Types **<Ti / To / Tc>** = <Input type / Output Type / Compute Type>, where
 | Element-wise        +------------------------------+  gfx90a             |                     |
 | Operations          |     f16 / f32 / \-           |  gfx942+            |                     |
 |                     +------------------------------+                     |                     |
-|                     |     f32 / f32 / \-           |                     |                     |
+|                     |     f32 / f32 / \-           |  gfx115X            |                     |
 +---------------------+------------------------------+---------------------+---------------------+
 |                     |     f16 / f16 / f16          |  gfx908             | Rank2 - Rank6       |
 | Reduction           +------------------------------+  gfx90a             |                     |
 |                     |     f16 / f16 / f32          |  gfx942+            |                     |
 |                     +------------------------------+                     |                     |
-|                     |     bf16 / bf16 / bf16       |                     |                     |
+|                     |     bf16 / bf16 / bf16       |  gfx115X            |                     |
 |                     +------------------------------+                     |                     |
 |                     |     bf16 / bf16 / f32        |                     |                     |
 |                     +------------------------------+                     |                     |

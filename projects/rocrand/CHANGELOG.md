@@ -3,6 +3,14 @@
 Documentation for rocRAND is available at
 [https://rocm.docs.amd.com/projects/rocRAND/en/latest/](https://rocm.docs.amd.com/projects/rocRAND/en/latest/)
 
+## rocRAND x.y.z for ROCm x.y
+
+### Changed
+
+* Benchmarking now requires [AMD SMI](https://rocm.docs.amd.com/projects/amdsmi/en/latest/) to be installed.
+  * rocRAND now uses the new single-header library 'primbench' for benchmarks, rather than Google Benchmark. primbench requires AMD SMI.
+  * See `shared/primbench/README.md` for primbench its documentation.
+
 ## rocRAND 4.2.0 for ROCm 7.2
 
 ### Added

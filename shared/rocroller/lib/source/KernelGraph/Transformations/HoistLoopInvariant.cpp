@@ -209,19 +209,15 @@ namespace rocRoller::KernelGraph
 
                 auto usedTags = extractDataFlowTags(*assignNode.expression);
 
-                bool isNotSpecial = true;
-                for(const auto coordinate : usedTags)
-                {
-                    if(graph.coordinates.get<Workitem>(coordinate).has_value())
-                    {
-                        Log::info("Coordinate {} is a Workitem, skipping hoisting", coordinate);
-                        isNotSpecial = false;
-                    }
-                    Log::info("{} Coordinate {} is a {}",
-                              control,
-                              coordinate,
-                              Graph::variantToString(graph.coordinates.getElement(coordinate)));
-                }
+                // bool isNotSpecial = true;
+                // for(const auto coordinate : usedTags)
+                // {
+                //     if(graph.coordinates.get<Workitem>(coordinate).has_value())
+                //     {
+                //         Log::info("Coordinate {} is a Workitem, skipping hoisting", coordinate);
+                //         isNotSpecial = false;
+                //     }
+                // }
 
                 bool allTagsLoopInvariant = true;
                 for(auto tag : usedTags)
@@ -236,46 +232,13 @@ namespace rocRoller::KernelGraph
                     }
                 }
 
-                if(allTagsLoopInvariant && isNotSpecial && !usedTags.empty())
+                if(allTagsLoopInvariant && !usedTags.empty())
                 {
                     Log::info(
                         "Hoisting Assign node {} before loop node {}, it uses dataflowtags {}",
                         control,
                         loopNode,
                         usedTags);
-
-                    {
-                        auto inputs = graph.control.getInputNodeIndices<ControlEdge>(control);
-                        for(auto input : inputs)
-                        {
-                            Log::info("Input nodes {}: {} {}",
-                                      control,
-                                      input,
-                                      Graph::variantToString(graph.control.getElement(input)));
-                        }
-                        auto outputs = graph.control.getOutputNodeIndices<ControlEdge>(control);
-                        for(auto output : outputs)
-                        {
-                            Log::info("Output nodes {}: {} {}",
-                                      control,
-                                      output,
-                                      Graph::variantToString(graph.control.getElement(output)));
-                        }
-                        auto inEdges
-                            = graph.control.getNeighbours<Graph::Direction::Upstream>(control);
-                        for(auto edge : inEdges)
-                        {
-                            Log::info("InEdges {}",
-                                      Graph::variantToString(graph.control.getElement(edge)));
-                        }
-                        auto outEdges
-                            = graph.control.getNeighbours<Graph::Direction::Downstream>(control);
-                        for(auto edge : outEdges)
-                        {
-                            Log::info("OutEdges {}",
-                                      Graph::variantToString(graph.control.getElement(edge)));
-                        }
-                    }
 
                     auto loopPredecessors = graph.control.getInputNodeIndices<ControlEdge>(loopNode)
                                                 .to<std::vector>();
@@ -304,7 +267,6 @@ namespace rocRoller::KernelGraph
 
                     // Increment the counter after successful hoisting
                     hoistedCount++;
-                    AssertFatal(false, "successful hoist");
                 }
             }
         }

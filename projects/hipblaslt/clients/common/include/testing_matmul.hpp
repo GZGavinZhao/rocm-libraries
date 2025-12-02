@@ -3681,7 +3681,7 @@ void testing_matmul_with_bias(const Arguments& arg,
             }
             if(!do_grouped_gemm)
             {
-                EfficiencyMonitor& perf_monitor = getEfficiencyMonitor();
+                auto perf_monitor = EfficiencyMonitor::create();
                 if(arg.use_ext)
                 {
                     for(int32_t b = 0; b < block_count; b++)
@@ -3721,7 +3721,7 @@ void testing_matmul_with_bias(const Arguments& arg,
                             continue;
                         }
                     }
-                    perf_monitor.start();
+                    perf_monitor->start();
                     pre_gpu_time(arg.use_gpu_timer, event_gpu_time_start, gpu_time_used, stream);
 
                     for(int i = 0; i < number_hot_calls; i++)
@@ -3790,7 +3790,7 @@ void testing_matmul_with_bias(const Arguments& arg,
                             continue;
                         }
                     }
-                    perf_monitor.start();
+                    perf_monitor->start();
                     pre_gpu_time(arg.use_gpu_timer, event_gpu_time_start, gpu_time_used, stream);
 
                     for(int i = 0; i < number_hot_calls; i++)
@@ -3832,11 +3832,11 @@ void testing_matmul_with_bias(const Arguments& arg,
                               event_gpu_time_end,
                               gpu_time_used,
                               stream);
-                perf_monitor.stop();
+                perf_monitor->stop();
             }
             else
             {
-                EfficiencyMonitor& perf_monitor = getEfficiencyMonitor();
+                auto perf_monitor = EfficiencyMonitor::create();
                 if(arg.use_user_args)
                 {
                     std::vector<unsigned char*> d_userArgsVec(block_count);
@@ -3887,7 +3887,7 @@ void testing_matmul_with_bias(const Arguments& arg,
                             continue;
                         }
                     }
-                    perf_monitor.start();
+                    perf_monitor->start();
                     pre_gpu_time(arg.use_gpu_timer, event_gpu_time_start, gpu_time_used, stream);
 
                     for(int i = 0; i < number_hot_calls; i++)
@@ -3899,7 +3899,7 @@ void testing_matmul_with_bias(const Arguments& arg,
                                   event_gpu_time_end,
                                   gpu_time_used,
                                   stream);
-                    perf_monitor.stop();
+                    perf_monitor->stop();
                 }
                 else
                 {
@@ -3944,7 +3944,7 @@ void testing_matmul_with_bias(const Arguments& arg,
                             continue;
                         }
                     }
-                    perf_monitor.start();
+                    perf_monitor->start();
                     pre_gpu_time(arg.use_gpu_timer, event_gpu_time_start, gpu_time_used, stream);
 
                     for(int i = 0; i < number_hot_calls; i++)
@@ -3955,7 +3955,7 @@ void testing_matmul_with_bias(const Arguments& arg,
                                   event_gpu_time_end,
                                   gpu_time_used,
                                   stream);
-                    perf_monitor.stop();
+                    perf_monitor->stop();
                 }
             }
 

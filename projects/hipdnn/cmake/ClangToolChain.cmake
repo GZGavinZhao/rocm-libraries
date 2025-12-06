@@ -27,6 +27,7 @@
 # Platform-specific compiler configuration
 if(WIN32)
     set(DEFAULT_ROCM_COMPILER_EXTENSION ".exe")
+    set(CMAKE_RC_COMPILER rc.exe)
 endif()
 
 # Common compiler configuration
@@ -146,10 +147,6 @@ endif()
 # If ROCM_PATH is provided, explicitly set compilers (bypasses toolchain auto-discovery).
 if(DEFINED ROCM_PATH)
     set(ROCM_LLVM_BIN_DIR ${ROCM_PATH}${DEFAULT_ROCM_LLVM_BIN_SUFFIX})
-
-    if(WIN32)
-        set(CMAKE_RC_COMPILER rc.exe)
-    endif()
 
     if(EXISTS ${ROCM_LLVM_BIN_DIR})
         set(CMAKE_C_COMPILER ${ROCM_LLVM_BIN_DIR}/clang${DEFAULT_ROCM_COMPILER_EXTENSION})

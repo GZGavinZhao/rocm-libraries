@@ -2551,27 +2551,34 @@ def _get_schedule_320x192x64_16bit(kernel, useLDSTr, TLDS):
         nglshift = nllshift = 16
     elif isTN(kernel) and TLDS==1:
         optSchedule = {
-            'SYNC'  : [[-1, 12, 12, 59, 59]],
-            'GRIncA': [[0, 0, 0, 1, 1, 1, 2, 2, 2]],
-            'GRIncB': [[3, 3, 3, 4, 4, 4, 5, 5, 5]],
+            'SYNC'  : [[-1, 12, 12, 59, 59, 91, 91]],
+            'GRIncA': [[0, 0, 1, 1, 2, 2, 3,  3,  4]],
+            'GRIncB': [[5, 5, 6, 6, 7, 8, 9, 10, 11]],
             'LRA0'  : [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]],
-            'LRB0'  : [[18, 19, 20, 21, 22, 23]],
-            'GRA'   : [[13, 13, 14, 14, 15, 15, 16, 16, 17, 17, 54, 54, 55, 55, 56, 56, 57, 57, 58, 58]],
-            'GRB'   : [[72, 72, 77, 77, 82, 82, 86, 86, 91, 91, 96, 96]],
-            'LRA1'  : [[60, 61, 62, 63, 64, 65, 66, 67, 68, 69]],
-            'LRB1'  : [[100, 110, 111, 112, 113, 114]],
+            'LRB0'  : [[24, 26, 28, 30, 32, 34],
+                       [25, 27, 29, 31, 33, 35]],
+            'GRA'   : [[13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57],
+                       [14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58]],
+            'GRB'   : [[92, 93, 94, 95, 96, 97, 98,  99, 100, 101, 102, 103],
+                       [93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104]],
+            'LRA1'  : [[60, 61, 62, 63, 64, 65, 66, 67, 68, 69],
+                       [61, 63, 65, 67, 69, 71, 73, 75, 77, 79]],
+            'LRB1'  : [[107, 109, 111, 113, 115, 117],
+                       [108, 110, 112, 114, 116, 118]],
             'LRSA'  : [[58]],
             'LRSB'  : [[58]],
-            'LWSA'  : [[96]],
-            'LWSB'  : [[96]],
+            'LWSA'  : [[105]],
+            'LWSB'  : [[106]],
             'LCC'   : [[119, 119]],
         }
         
         syncCode = [
-            SWaitCnt(dscnt=5, vlcnt=-1, vscnt=-1, comment="wait for prior local read local write old=0, new=5 newLW=0 newLR=5 for iteration == 0") ,
-            SWaitCnt(dscnt=12, vlcnt=-1, vscnt=-1, comment="wait for prior local read local write") ,
+            SWaitCnt(dscnt=4, vlcnt=-1, vscnt=-1, comment="Wait for prior local read. Relax a bit to dscnt=4 to reduce latency") ,
+            SWaitCnt(dscnt=0, vlcnt=-1, vscnt=-1, comment="Wait for all LRA0 for GRA") ,
             SBarrier(comment="") ,
-            SWaitCnt(dscnt=0, vlcnt=10, vscnt=-1, comment="wait for prior local read local write old=0, new=0 newLW=0 newLR=0") ,
+            SWaitCnt(dscnt=0, vlcnt=10, vscnt=-1, comment="Wait for prior GRs before GRA*10 for LRA1. Also wait for all LRs for the upcoming MFMAs") ,
+            SBarrier(comment="") ,
+            SWaitCnt(dscnt=10, vlcnt=-1, vscnt=-1, comment="Wait for all LRB0 before LRA1*10 for GRB") ,
             SBarrier(comment="") ,
         ]
         nglshift = nllshift = 16

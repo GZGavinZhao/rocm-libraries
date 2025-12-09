@@ -1,5 +1,5 @@
+// Copyright (c) Advanced Micro Devices, Inc., or its affiliates.
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2018-2024, Advanced Micro Devices, Inc. All rights reserved.
 
 #pragma once
 
@@ -21,6 +21,11 @@
 #include "ck/library/utility/device_memory.hpp"
 #include "ck/library/utility/host_tensor.hpp"
 #include "ck/library/utility/host_tensor_generator.hpp"
+
+using ::ck::DeviceMem;
+using ::ck::hip_check_error;
+using ::ck::HostTensorDescriptor;
+using ::ck::Tensor;
 
 template <ck::index_t... Is>
 using S = ck::Sequence<Is...>;
@@ -92,7 +97,7 @@ inline bool parse_cmd_args(int argc,
 
         const ck::index_t num_dim_spatial = std::stoi(argv[4]);
         conv_params                       = ck::utils::conv::parse_conv_param(
-            num_dim_spatial, threshold_to_catch_partial_args, argv);
+            num_dim_spatial, threshold_to_catch_partial_args + 1, argv);
     }
     else
     {

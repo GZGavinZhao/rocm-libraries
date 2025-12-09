@@ -349,6 +349,17 @@ if(OPTIMAL)
   )
 endif()
 
+# Asynchronous logger option
+# Note: this does not mean abolsutely asynchronous, just less synchronous
+option(ROCSOLVER_USE_ASYNC_LOGGER "Enable asynchronous HIP event-based logger (reduces GPU synchronizations)" ON)
+
+# Configure asynchronous logger compile definition
+if(ROCSOLVER_USE_ASYNC_LOGGER)
+  set(ROCSOLVER_ASYNC_LOGGER_DEFINITION "ROCSOLVER_USE_ASYNC_LOGGER=1")
+else()
+  set(ROCSOLVER_ASYNC_LOGGER_DEFINITION "ROCSOLVER_USE_ASYNC_LOGGER=0")
+endif()
+
 set(auxiliaries
   common/buildinfo.cpp
   common/rocsolver_handle.cpp
@@ -470,15 +481,6 @@ set_target_properties(rocsolver PROPERTIES
 )
 generate_export_header(rocsolver EXPORT_FILE_NAME ${PROJECT_BINARY_DIR}/include/rocsolver/rocsolver-export.h)
 
-if (BUILD_FILE_REORG_BACKWARD_COMPATIBILITY)
-  rocm_wrap_header_file(
-    rocsolver-version.h rocsolver-export.h
-    GUARDS SYMLINK WRAPPER
-    WRAPPER_LOCATIONS ${CMAKE_INSTALL_INCLUDEDIR} rocsolver/${CMAKE_INSTALL_INCLUDEDIR}
-    ORIGINAL_FILES ${PROJECT_BINARY_DIR}/include/rocsolver/rocsolver-version.h
-  )
-endif( )
-
 if(NOT BUILD_SHARED_LIBS)
   # Following Boost conventions of prefixing 'lib' on static built libraries, across all platforms
   set_target_properties(rocsolver PROPERTIES PREFIX "lib")
@@ -501,6 +503,7 @@ target_compile_definitions(rocsolver PRIVATE
   ROCM_USE_FLOAT16
   ROCBLAS_INTERNAL_API
   ROCSOLVER_LIBRARY
+  ${ROCSOLVER_ASYNC_LOGGER_DEFINITION}
 )
 
 add_armor_flags(rocsolver "${ARMOR_LEVEL}")
@@ -550,12 +553,3 @@ rocm_export_targets(
     ${static_depends}
   NAMESPACE roc::
 )
-
-if(BUILD_FILE_REORG_BACKWARD_COMPATIBILITY)
-  rocm_install(
-    DIRECTORY
-       "${PROJECT_BINARY_DIR}/rocsolver"
-        DESTINATION "." )
-  message( STATUS "Backward Compatible Sym Link Created for include directories" )
-endif()
-

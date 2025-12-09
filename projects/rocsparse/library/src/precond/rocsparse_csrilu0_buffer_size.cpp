@@ -23,6 +23,7 @@
  * ************************************************************************ */
 
 #include "../level2/rocsparse_csrsv.hpp"
+#include "../level2/rocsparse_csrsv_deprecated_template.hpp"
 #include "internal/precond/rocsparse_csrilu0.h"
 #include "rocsparse_csrilu0.hpp"
 
@@ -41,16 +42,18 @@ namespace rocsparse
     {
         ROCSPARSE_ROUTINE_TRACE;
 
-        RETURN_IF_ROCSPARSE_ERROR(rocsparse::csrsv_buffer_size_template(handle,
-                                                                        rocsparse_operation_none,
-                                                                        m,
-                                                                        nnz,
-                                                                        descr,
-                                                                        csr_val,
-                                                                        csr_row_ptr,
-                                                                        csr_col_ind,
-                                                                        info,
-                                                                        buffer_size));
+        RETURN_IF_ROCSPARSE_ERROR(
+            (rocsparse::csrsv_buffer_size_template<rocsparse_int, rocsparse_int, T>(
+                handle,
+                rocsparse_operation_none,
+                m,
+                nnz,
+                descr,
+                csr_val,
+                csr_row_ptr,
+                csr_col_ind,
+                info,
+                buffer_size)));
         return rocsparse_status_success;
     }
 

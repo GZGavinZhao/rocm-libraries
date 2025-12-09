@@ -1,5 +1,5 @@
+// Copyright (c) Advanced Micro Devices, Inc., or its affiliates.
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2018-2023, Advanced Micro Devices, Inc. All rights reserved.
 
 #pragma once
 
@@ -101,7 +101,7 @@ struct FusedMoeGemmShape
     static constexpr index_t Repeat_N1 = Block_N1 / ThreadPerBlock_N1;
     static constexpr index_t Repeat_K1 = Block_K1 / ThreadPerBlock_K1;
 
-    static constexpr index_t BlockSize = WarpSize * NumWarps;
+    static constexpr index_t BlockSize = get_warp_size() * NumWarps;
 
     // some assert
     static_assert(Block_M0 == Block_M1);

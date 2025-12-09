@@ -33,20 +33,17 @@
 #include <miopen/miopen.h>
 #include <miopen/object.hpp>
 #include <miopen/solver_id.hpp>
-#include <miopen/names.hpp>
 #include <miopen/invoke_params.hpp>
 #include <miopen/invoker.hpp>
 #include <miopen/conv/tensors.hpp>
 
 #include <nlohmann/json_fwd.hpp>
 
-#include <boost/any.hpp>
-
+#include <random>
 #include <string>
 #include <tuple>
-#include <vector>
 #include <unordered_map>
-#include <random>
+#include <vector>
 
 MIOPEN_DECLARE_ENV_VAR_UINT64(MIOPEN_DEBUG_CONVOLUTION_ATTRIB_FP16_ALT_IMPL)
 MIOPEN_DECLARE_ENV_VAR_BOOL(MIOPEN_DEBUG_CONVOLUTION_DETERMINISTIC)
@@ -151,6 +148,14 @@ std::vector<Solution> FindConvolution(const ExecutionContext& ctx,
                                       int requestAlgoCount,
                                       bool force_attach_binary);
 
+enum class FallbackPath
+{
+    None = 0,
+    WTI,
+    AI,
+    Default_ = None
+};
+
 struct MIOPEN_INTERNALS_EXPORT ConvolutionDescriptor : miopenConvolutionDescriptor
 {
     ConvolutionDescriptor(std::size_t spatial_dim,
@@ -231,7 +236,7 @@ struct MIOPEN_INTERNALS_EXPORT ConvolutionDescriptor : miopenConvolutionDescript
     GetSolutions(const ExecutionContext& ctx,
                  const conv::ProblemDescription& problem,
                  size_t maxSolutionCount,
-                 bool* fallbackPathTaken,
+                 FallbackPath* fallbackPathTaken,
                  const AnyInvokeParams* invokeParams = nullptr) const;
 
     void CompileSolution(const ExecutionContext& ctx,
@@ -359,6 +364,7 @@ struct MIOPEN_INTERNALS_EXPORT ConvolutionDescriptor : miopenConvolutionDescript
     GetSolutionsFallback(const ExecutionContext& ctx,
                          const conv::ProblemDescription& problem,
                          size_t maxSolutionCount,
+                         FallbackPath* fallbackPathTaken     = nullptr,
                          const AnyInvokeParams* invokeParams = nullptr) const;
 
     std::size_t GetSolutionCountFallback(const ExecutionContext& ctx,

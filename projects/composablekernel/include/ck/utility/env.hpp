@@ -1,13 +1,13 @@
+// Copyright (c) Advanced Micro Devices, Inc., or its affiliates.
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2024-2025, Advanced Micro Devices, Inc. All rights reserved.
 #pragma once
-
 #ifndef CK_CODE_GEN_RTC
 
 #include <cstdlib>
 #include <cstring>
 #include <string>
 #include <string_view>
+#include <map>
 
 namespace ck {
 namespace internal {

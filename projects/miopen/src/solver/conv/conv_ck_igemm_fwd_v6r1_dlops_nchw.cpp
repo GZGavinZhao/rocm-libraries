@@ -31,8 +31,8 @@
 #include <miopen/solver/implicitgemm_legacy_ck_util.hpp>
 #include <miopen/solver/legacy_ck_common.hpp>
 
-#include "../composable_kernel/host/solver/include/solver_common.hpp"
-#include "../composable_kernel/host/solver/include/conv_igemm_fwd_v6r1_dlops_nchw_kcyx_nkhw.hpp"
+#include "../legacy_composable_kernel/host/solver/include/solver_common.hpp"
+#include "../legacy_composable_kernel/host/solver/include/conv_igemm_fwd_v6r1_dlops_nchw_kcyx_nkhw.hpp"
 
 #define WORKAROUND_SWDEV_411729 1
 
@@ -97,7 +97,8 @@ bool ConvCkIgemmFwdV6r1DlopsNchw::IsApplicable(const ExecutionContext& ctx,
     {
         return false;
     }
-    if(ThisSolverIsDeprecatedStatic::IsDisabled(ctx))
+    const std::string name = ctx.GetStream().GetDeviceName();
+    if(!(StartsWith(name, "gfx8") || StartsWith(name, "gfx90") || StartsWith(name, "gfx103")))
         return false;
     if(!ctx.use_hip_kernels)
         return false;
@@ -119,8 +120,7 @@ bool ConvCkIgemmFwdV6r1DlopsNchw::IsApplicable(const ExecutionContext& ctx,
         return false;
     if(problem.GetGroupCount() != 1)
         return false;
-    if(ctx.GetStream().GetTargetProperties().Name() == "gfx90a" &&
-       problem.IsGfx90aFp16altRequired())
+    if(name == "gfx90a" && problem.IsGfx90aFp16altRequired())
         return false;
     if(!legacy_ck::IsIndexRangeLargeEnough(problem))
         return false;

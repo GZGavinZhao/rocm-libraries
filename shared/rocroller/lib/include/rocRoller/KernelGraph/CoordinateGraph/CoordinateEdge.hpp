@@ -28,8 +28,9 @@
 
 #include <string>
 
-#include <rocRoller/Expression_fwd.hpp>
 #include <rocRoller/KernelGraph/CoordinateGraph/CoordinateEdge_fwd.hpp>
+
+#include <rocRoller/Expression.hpp>
 #include <rocRoller/KernelGraph/StructUtils.hpp>
 #include <rocRoller/Utilities/Utils.hpp>
 
@@ -94,6 +95,21 @@ namespace rocRoller
         RR_EMPTY_STRUCT_WITH_NAME(Alias);
 
         /**
+         * Identify - connects coordinates that can be identified with
+         * another coordinate.
+         *
+         * This is a variant of `DataFlowEdge`; and therefore they are
+         * not traversed during coordinate transforms.
+         *
+         * Primarily used in StreamK kernels to connect streaming
+         * Unroll coordinates to their associated ForLoop coordinate
+         * deeper in the coordinate transform.
+         *
+         * See `rocRoller::KernelGraph::followIdentify()`.
+         */
+        RR_EMPTY_STRUCT_WITH_NAME(Identify);
+
+        /**
          * Index - denotes that the source will index the register
          * allocation from the dest.
          */
@@ -116,6 +132,28 @@ namespace rocRoller
             std::string name() const
             {
                 return "Index";
+            }
+        };
+
+        struct Segment
+        {
+            int index = -1;
+
+            Segment() = default;
+
+            Segment(int const index)
+                : index(index)
+            {
+            }
+
+            std::string toString() const
+            {
+                return name();
+            }
+
+            std::string name() const
+            {
+                return "Segment";
             }
         };
 
@@ -275,12 +313,12 @@ namespace rocRoller
 
             PiecewiseAffineJoin() = default;
 
-            PiecewiseAffineJoin(ExpressionPtr                  condition,
-                                ExpressionPtrVectorPair const& strides,
-                                ExpressionPtrPair const&       initialValues)
-                : condition(condition)
-                , strides(strides)
-                , initialValues(initialValues)
+            PiecewiseAffineJoin(ExpressionPtr           condition,
+                                ExpressionPtrVectorPair strides,
+                                ExpressionPtrPair       initialValues)
+                : condition(std::move(condition))
+                , strides(std::move(strides))
+                , initialValues(std::move(initialValues))
             {
                 AssertFatal(strides.first.size() == strides.second.size());
             }

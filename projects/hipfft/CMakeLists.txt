@@ -37,7 +37,6 @@ else()
     "Install path prefix, prepended onto install directories" )
 endif()
 
-
 # Workarounds..
 list( APPEND CMAKE_PREFIX_PATH /opt/rocm/llvm /opt/rocm )
 list( APPEND CMAKE_MODULE_PATH ${ROCM_PATH}/lib/cmake/hip /opt/rocm/lib/cmake/hip /opt/rocm/hip/cmake )
@@ -124,7 +123,7 @@ string( TOUPPER "${BUILD_WITH_LIB}" BUILD_WITH_LIB )
 
 # nvc++ doesn't understand warning flags
 if( NOT CMAKE_CXX_COMPILER MATCHES ".*nvc\\+\\+" )
-  set( WARNING_FLAGS -Wall -Wno-unused-function -Wimplicit-fallthrough -Wunreachable-code -Wno-unknown-pragmas)
+  set( WARNING_FLAGS -Wall -Wno-unused-function -Wimplicit-fallthrough -Wunreachable-code -Wsign-compare -Wno-unknown-pragmas)
   if( WERROR )
     set( WARNING_FLAGS ${WARNING_FLAGS} -Werror )
   endif()
@@ -175,20 +174,10 @@ endif()
 # Show the actual compiler(internal option)
 message(STATUS "BUILD_WITH_COMPILER = " ${BUILD_WITH_COMPILER})
 
-# FOR HANDLING ENABLE/DISABLE OPTIONAL BACKWARD COMPATIBILITY for FILE/FOLDER REORG
-option(BUILD_FILE_REORG_BACKWARD_COMPATIBILITY "Build with file/folder reorg with backward compatibility enabled" OFF)
-if(BUILD_FILE_REORG_BACKWARD_COMPATIBILITY AND NOT WIN32)
-  rocm_wrap_header_dir(
-    ${CMAKE_SOURCE_DIR}/library/include
-    PATTERNS "*.h"
-    GUARDS SYMLINK WRAPPER
-    WRAPPER_LOCATIONS ${CMAKE_INSTALL_INCLUDEDIR}
-  )
-endif()
-
 # Version
-set( VERSION_STRING "1.0.20" )
+set( VERSION_STRING "1.0.22" )
 set( hipfft_SOVERSION 0.1 )
+set( hipfftw_SOVERSION 0.1 )
 
 if( ROCmCMakeBuildTools_FOUND )
   rocm_setup_version( VERSION ${VERSION_STRING} )

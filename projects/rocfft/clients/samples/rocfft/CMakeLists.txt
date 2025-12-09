@@ -61,7 +61,7 @@ set( sample_list rocfft_example_complexcomplex rocfft_example_realcomplex rocfft
 
 foreach( sample ${sample_list} )
 
-  add_executable( ${sample} ${sample}.cpp )
+  add_executable( ${sample} ${sample}.cpp ../../../shared/data_gen_device.cpp )
 
   target_include_directories(
     ${sample}
@@ -80,6 +80,7 @@ foreach( sample ${sample_list} )
       PRIVATE
       hip::hiprand
       )
+    target_compile_definitions( ${sample} PRIVATE USE_HIPRAND )
   endif()
 
   target_compile_options( ${sample} PRIVATE ${WARNING_FLAGS} -Wno-cpp )
@@ -116,3 +117,10 @@ foreach( sample ${sample_list} )
   target_link_libraries( ${sample} PRIVATE ${ROCFFT_CLIENTS_HOST_LINK_LIBS} ${ROCFFT_CLIENTS_DEVICE_LINK_LIBS} )
 
 endforeach( )
+
+# callback functions need to be built as relocatable device code
+# (causes failure at link stage on Windows)
+if (NOT WIN32)
+  target_compile_options( rocfft_example_callback PRIVATE -fgpu-rdc )
+  target_link_options( rocfft_example_callback PRIVATE -fgpu-rdc )
+endif()

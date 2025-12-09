@@ -34,12 +34,6 @@
 
 namespace rocRoller
 {
-    // Register supported components
-    RegisterComponentTemplateSpec(DivideGenerator, Register::Type::Scalar, DataType::Int32);
-    RegisterComponentTemplateSpec(DivideGenerator, Register::Type::Vector, DataType::Int32);
-    RegisterComponentTemplateSpec(DivideGenerator, Register::Type::Scalar, DataType::Int64);
-    RegisterComponentTemplateSpec(DivideGenerator, Register::Type::Vector, DataType::Int64);
-
     template <>
     std::shared_ptr<BinaryArithmeticGenerator<Expression::Divide>>
         GetGenerator<Expression::Divide>(Register::ValuePtr dst,
@@ -64,6 +58,9 @@ namespace rocRoller
     {
         AssertFatal(lhs != nullptr);
         AssertFatal(rhs != nullptr);
+
+        AssertFatal(m_context->kernelOptions()->enableFullDivision,
+                    "Full integer division not enabled by default.");
 
         co_yield_(Instruction::Lock(Scheduling::Dependency::VCC, "Start of Division"));
 
@@ -212,6 +209,8 @@ namespace rocRoller
         Register::ValuePtr rhs,
         Expression::Divide const&)
     {
+        AssertFatal(m_context->kernelOptions()->enableFullDivision,
+                    "Full integer division not enabled by default.");
 
         auto const& architecture  = m_context->targetArchitecture();
         auto const  wavefrontSize = architecture.GetCapability(GPUCapability::DefaultWavefrontSize);
@@ -231,8 +230,8 @@ namespace rocRoller
         //
         // Generated code was modified to use the provided dest, lhs and rhs registers and
         // to save the result in the dest register instead of memory.
-        co_yield Instruction::Lock(Scheduling::Dependency::SCC, "Start of Divide64(SCC)");
         co_yield(Instruction::Lock(Scheduling::Dependency::VCC, "Start of Divide64(VCC)"));
+        co_yield Instruction::Lock(Scheduling::Dependency::SCC, "Start of Divide64(SCC)");
         co_yield describeOpArgs("dest", dest, "lhs", lhs, "rhs", rhs);
         Register::ValuePtr l0, l1, r0, r1;
         co_yield get2DwordsScalar(l0, l1, lhs);
@@ -530,8 +529,8 @@ namespace rocRoller
                               {v_8, Register::Value::Literal(0)},
                               {},
                               "Move value"));
-        co_yield(Instruction::Unlock("End of Divide64(VCC)"));
         co_yield(Instruction::Unlock("End of Divide64(SCC)"));
+        co_yield(Instruction::Unlock("End of Divide64(VCC)"));
     }
 
     template <>
@@ -541,6 +540,9 @@ namespace rocRoller
         Register::ValuePtr rhs,
         Expression::Divide const&)
     {
+        AssertFatal(m_context->kernelOptions()->enableFullDivision,
+                    "Full integer division not enabled by default.");
+
         auto const& architecture  = m_context->targetArchitecture();
         auto const  wavefrontSize = architecture.GetCapability(GPUCapability::DefaultWavefrontSize);
         AssertFatal(wavefrontSize == 32 || wavefrontSize == 64,
@@ -561,8 +563,8 @@ namespace rocRoller
         //
         // Generated code was modified to use the provided dest, lhs and rhs registers and
         // to save the result in the dest register instead of memory.
-        co_yield(Instruction::Lock(Scheduling::Dependency::SCC, "Start of Divide64(SCC)"));
         co_yield(Instruction::Lock(Scheduling::Dependency::VCC, "Start of Divide64(VCC)"));
+        co_yield(Instruction::Lock(Scheduling::Dependency::SCC, "Start of Divide64(SCC)"));
         co_yield describeOpArgs("dest", dest, "lhs", lhs, "rhs", rhs);
 
         Register::ValuePtr l0, l1, r0, r1;
@@ -876,7 +878,7 @@ namespace rocRoller
         {
             co_yield_(Instruction("s_or_b32", {EXEC}, {EXEC, s_5}, {}, ""));
         }
-        co_yield(Instruction::Unlock("End of Divide64(VCC)"));
         co_yield(Instruction::Unlock("End of Divide64(SCC)"));
+        co_yield(Instruction::Unlock("End of Divide64(VCC)"));
     }
 }

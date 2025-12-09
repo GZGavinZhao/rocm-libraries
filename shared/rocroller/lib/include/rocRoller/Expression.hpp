@@ -34,7 +34,6 @@
 #include <rocRoller/Expression_fwd.hpp>
 #include <rocRoller/InstructionValues/Register_fwd.hpp>
 #include <rocRoller/Operations/CommandArgument_fwd.hpp>
-#include <rocRoller/Utilities/Component.hpp>
 #include <rocRoller/Utilities/EnumBitset.hpp>
 
 namespace rocRoller
@@ -262,6 +261,23 @@ namespace rocRoller
             constexpr static inline int                 Complexity = 1;
         };
 
+        struct BitfieldCombine : Binary
+        {
+            uint32_t srcOffset = 0u;
+            uint32_t dstOffset = 0u;
+            uint32_t width     = 0u;
+
+            // if srcIsZero sets to true, that means bits outside [srcOffset:srcOffset+width-1] are 0
+            std::optional<bool> srcIsZero = std::nullopt;
+            // if dstIsZero sets to true, that means bits [dstOffset:dstOffset+width-1] are 0
+            std::optional<bool> dstIsZero = std::nullopt;
+
+            constexpr static inline auto                Type = Category::Arithmetic;
+            constexpr static inline EvaluationTimes     EvalTimes{EvaluationTime::Translate};
+            constexpr static inline AlgebraicProperties Properties{};
+            constexpr static inline int                 Complexity = 4;
+        };
+
         /*
          * SRConversion performs a stochastic rounding conversion.
          * The lhs is the value to be converted, the rhs is the seed
@@ -305,10 +321,11 @@ namespace rocRoller
             requires std::derived_from<T, Ternary> || CTernaryMixed<T>;
         };
 
-        /*
+        /**
+         * `result = (lhs + r1hs) << r2hs`
+         *
          * AddShiftL performs a fusion of Add expression followed by
          * ShiftL expression, lowering to the fused instruction if possible.
-         * result = (lhs + r1hs) << r2hs
          */
         struct AddShiftL : Ternary
         {
@@ -317,10 +334,11 @@ namespace rocRoller
             constexpr static inline int             Complexity = 2;
         };
 
-        /*
+        /**
+         * `result = (lhs << r1hs) + r2hs`
+         *
          * ShiftLAdd performs a fusion of ShiftL expression followed by
          * Add expression, lowering to the fused instruction if possible.
-         * result = (lhs << r1hs) + r2hs
          */
         struct ShiftLAdd : Ternary
         {
@@ -330,7 +348,7 @@ namespace rocRoller
         };
 
         /**
-         * Represents DEST = MatA * MatB + MatC.
+         * result = (lhs x r1hs) + r2hs.
          *
          * MatA is M x K, with B batches.  MatB is K x N, with B batches.  MatC is M x N, with B batches.
          */
@@ -357,6 +375,9 @@ namespace rocRoller
             constexpr static inline int             Complexity = 20;
         };
 
+        /**
+         * result = ((matA * scaleA) x (matB * scaleB)) + matC
+         */
         struct ScaledMatrixMultiply
         {
             ExpressionPtr matA, matB, matC, scaleA, scaleB;
@@ -383,7 +404,8 @@ namespace rocRoller
         };
 
         /**
-         * Represents DEST = LHS ? R1HS : R2HS.
+         * dest = lhs ? r1hs : r2hs.
+         *
          * Utilizes cselect
         */
         struct Conditional : Ternary
@@ -394,7 +416,8 @@ namespace rocRoller
         };
 
         /**
-         * Represents DEST = LHS * R1HS + R2HS.
+         * dest = lhs * r1hs + r2hs.
+         *
          * Utilizes TernaryMixed instead of Ternary
          * allows for mixed precision arithmetic
          */
@@ -509,6 +532,13 @@ namespace rocRoller
             constexpr static inline int  Complexity = 1;
         };
 
+        struct ToScalar : Unary
+        {
+            constexpr static inline auto Type       = Category::Arithmetic;
+            constexpr static inline auto EvalTimes  = EvaluationTimes::All();
+            constexpr static inline int  Complexity = 1;
+        };
+
         struct BitFieldExtract : Unary
         {
             inline BitFieldExtract& copyParams(const BitFieldExtract& other)
@@ -529,6 +559,50 @@ namespace rocRoller
             int      width          = 0;
         };
 
+        struct Nary
+        {
+            std::vector<ExpressionPtr> operands;
+            std::string                comment = "";
+
+            template <typename T>
+            requires std::derived_from<T, Nary>
+            inline T& copyParams(const T& other)
+            {
+                return static_cast<T&>(*this);
+            }
+        };
+
+        template <typename T>
+        concept CNary = requires
+        {
+            requires std::derived_from<T, Nary>;
+        };
+
+        /**
+         * @brief Perform bitwise concatenation among all operands.
+         *
+         * Each operand must be dword aligned and the total number of operands'
+         * registers must be equal to the number of registers for
+         * 'destinationType'.
+         *
+         * All operands should have register type of literal, scalar or
+         * vector.
+         */
+        struct Concatenate : Nary
+        {
+            constexpr static inline auto            Type       = Category::Value;
+            constexpr static inline EvaluationTimes EvalTimes  = EvaluationTimes{};
+            constexpr static inline int             Complexity = 1;
+
+            VariableType destinationType;
+
+            inline Concatenate& copyParams(const Concatenate& other)
+            {
+                destinationType = other.destinationType;
+                return Nary::copyParams(other);
+            }
+        };
+
         /**
          * @brief Register value from the coordinate graph.
          *
@@ -546,7 +620,7 @@ namespace rocRoller
             Register::Type regType;
             VariableType   varType;
 
-            bool operator==(DataFlowTag const&) const = default;
+            auto operator<=>(DataFlowTag const&) const = default;
         };
 
         /**
@@ -556,7 +630,10 @@ namespace rocRoller
         {
             int slot;
 
-            bool operator==(PositionalArgument const&) const = default;
+            Register::Type regType;
+            VariableType   varType;
+
+            auto operator<=>(PositionalArgument const&) const = default;
         };
 
         ExpressionPtr operator+(ExpressionPtr a, ExpressionPtr b);
@@ -580,6 +657,11 @@ namespace rocRoller
 
         ExpressionPtr multiplyHigh(ExpressionPtr a, ExpressionPtr b);
 
+        ExpressionPtr multiplyAdd(ExpressionPtr a, ExpressionPtr b, ExpressionPtr c);
+        ExpressionPtr addShiftL(ExpressionPtr a, ExpressionPtr b, ExpressionPtr c);
+        ExpressionPtr shiftLAdd(ExpressionPtr a, ExpressionPtr b, ExpressionPtr c);
+        ExpressionPtr conditional(ExpressionPtr a, ExpressionPtr b, ExpressionPtr c);
+
         // arithmeticShiftR is the same as >>
         ExpressionPtr arithmeticShiftR(ExpressionPtr a, ExpressionPtr b);
         ExpressionPtr logicalShiftR(ExpressionPtr a, ExpressionPtr b);
@@ -597,6 +679,16 @@ namespace rocRoller
         ExpressionPtr bfe(DataType dt, ExpressionPtr a, uint8_t offset, uint8_t width);
         ExpressionPtr bfe(ExpressionPtr a, uint8_t offset, uint8_t width);
 
+        ExpressionPtr bfc(ExpressionPtr       src,
+                          ExpressionPtr       dst,
+                          uint32_t            srcOffset,
+                          uint32_t            dstOffset,
+                          uint32_t            width,
+                          std::optional<bool> srcIsZero = std::nullopt,
+                          std::optional<bool> dstIsZero = std::nullopt);
+
+        ExpressionPtr concat(const std::vector<ExpressionPtr>& ops, VariableType v);
+
         template <CCommandArgumentValue T>
         ExpressionPtr literal(T value);
 
@@ -613,6 +705,9 @@ namespace rocRoller
          */
         template <CCommandArgumentValue T>
         ExpressionPtr literal(T value, VariableType v);
+
+        ExpressionPtr dataFlowTag(int tag, Register::Type t, VariableType v);
+        ExpressionPtr positionalArgument(int slot, Register::Type t, VariableType v);
 
         template <typename T>
         concept CValue = CIsAnyOf<T,
@@ -845,6 +940,19 @@ namespace rocRoller
         CommandArgumentValue evaluate(Expression const& expr, RuntimeArguments const& args);
 
         /**
+         * Reinterpret cast a value to a target DataType.
+         *
+         * @tparam FromType The input value type
+         * @param value The value to reinterpret
+         * @param targetDataType The target DataType to cast to
+         * @return CommandArgumentValue containing the reinterpreted value
+         */
+        template <CCommandArgumentValue FromType, int Idx = 0>
+        CommandArgumentValue reinterpret(FromType const& value, DataType targetDataType);
+        CommandArgumentValue reinterpret(CommandArgumentValue const& value,
+                                         DataType                    targetDataType);
+
+        /**
          * Splits an expression and returns its operands in a tuple.
          *
          * Return type:
@@ -888,6 +996,15 @@ namespace rocRoller
          */
         bool containsSubExpression(ExpressionPtr const& expr, ExpressionPtr const& subExpr);
         bool containsSubExpression(Expression const& expr, Expression const& subExpr);
+
+        std::unordered_set<std::string> referencedKernelArguments(ExpressionPtr const& expr);
+        std::unordered_set<std::string> referencedKernelArguments(Expression const& expr);
+
+        std::unordered_set<std::string>
+            referencedKernelArguments(ExpressionPtr const&      expr,
+                                      RegisterTagManager const& tagManager);
+        std::unordered_set<std::string>
+            referencedKernelArguments(Expression const& expr, RegisterTagManager const& tagManager);
 
     } // namespace Expression
 } // namespace rocRoller

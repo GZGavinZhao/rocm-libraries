@@ -22,7 +22,6 @@
 
 cmake_minimum_required(VERSION 3.16 FATAL_ERROR)
 
-
 if(DEFINED ENV{ROCM_PATH})
   set (ROCM_PATH "$ENV{ROCM_PATH}" CACHE PATH "The path to the ROCm installation.")
 endif()
@@ -41,13 +40,12 @@ endif()
 # hipRAND project
 #
 project(hipRAND CXX)
-set(hipRAND_VERSION "2.13.0")
+set(hipRAND_VERSION "3.1.0")
 
 # Build options
 option(BUILD_ADDRESS_SANITIZER "Build with address sanitizer enabled" OFF)
 option(BUILD_BENCHMARK "Build benchmarks" OFF)
 option(BUILD_CODE_COVERAGE "Build with code coverage enabled" OFF)
-option(BUILD_FILE_REORG_BACKWARD_COMPATIBILITY "Build with file/folder reorg with backward compatibility enabled" OFF)
 option(BUILD_FORTRAN_WRAPPER "Build Fortran wrapper" OFF)
 option(BUILD_TEST "Build tests (requires googletest)" OFF)
 option(DEPENDENCIES_FORCE_DOWNLOAD "Do not use system installed dependencies, always download and build them" OFF)
@@ -156,12 +154,6 @@ if(BUILD_ADDRESS_SANITIZER AND BUILD_SHARED_LIBS)
   add_link_options(-fuse-ld=lld)
 endif()
 
-if(BUILD_CODE_COVERAGE)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
-  add_compile_options(-fprofile-arcs -ftest-coverage)
-  add_link_options(--coverage -lgcov)
-endif()
-
 # Set version variables
 rocm_setup_version( VERSION "${hipRAND_VERSION}" )
 set ( hiprand_VERSION ${hipRAND_VERSION} )
@@ -186,7 +178,7 @@ if(BUILD_TEST)
     add_subdirectory(test)
 endif()
 
-set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.txt")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.md")
 set(CPACK_RPM_PACKAGE_LICENSE "MIT")
 if(WIN32)
     set(CPACK_SOURCE_GENERATOR "ZIP")
@@ -221,55 +213,15 @@ else()
     set(package_name hiprand)
 endif()
 
+if(BUILD_CODE_COVERAGE)
+  target_compile_options(hiprand PRIVATE -g -O0 -fprofile-instr-generate -fcoverage-mapping)
+  target_link_options(hiprand PUBLIC -fprofile-instr-generate)
+endif()
+
 rocm_create_package(
         NAME ${package_name}
-        DESCRIPTION "A GPU-based random number generation library, written in HIP"
+        DESCRIPTION "GPU-based random number generation library, written in HIP"
         MAINTAINER "hipRAND Maintainer <hiprand-maintainer@amd.com>"
         LDCONFIG
         LDCONFIG_DIR ${HIPRAND_CONFIG_DIR}
 )
-
-if(BUILD_CODE_COVERAGE)
-  #
-  # Run coverage analysis
-  #
-  add_custom_target(coverage_analysis
-    COMMAND echo Coverage GTEST_FILTER=\${GTEST_FILTER}
-    COMMAND ctest --output-on-failure --gtest_filter=\"\${GTEST_FILTER}\"
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    )
-
-  add_dependencies(coverage_analysis hiprand)
-
-  #
-  # Prepare coverage output
-  # This little script is generated because the option '--gcov-tool <program name>' of lcov cannot take arguments.
-  #
-  add_custom_target(coverage_output
-    DEPENDS coverage_analysis
-    COMMAND mkdir -p lcoverage
-    COMMAND echo "\\#!/bin/bash" > llvm-gcov.sh
-    COMMAND echo "\\# THIS FILE HAS BEEN GENERATED" >> llvm-gcov.sh
-    COMMAND printf "exec /opt/rocm/llvm/bin/llvm-cov gcov $$\\@" >> llvm-gcov.sh
-    COMMAND chmod +x llvm-gcov.sh
-    )
-
-  #
-  # Generate coverage output.
-  #
-  add_custom_command(TARGET coverage_output
-    COMMAND lcov --directory . --base-directory ./hiprand --gcov-tool ${CMAKE_BINARY_DIR}/llvm-gcov.sh --capture -o lcoverage/raw_main_coverage.info
-    COMMAND lcov --remove lcoverage/raw_main_coverage.info "'/opt/*'" "'/usr/*'" "'*/test/*'" -o lcoverage/main_coverage.info
-    COMMAND genhtml lcoverage/main_coverage.info --output-directory lcoverage
-    )
-
-  add_custom_target(coverage DEPENDS coverage_output)
-
-  #
-  # Coverage cleanup
-  #
-  add_custom_target(coverage_cleanup
-    COMMAND find ${CMAKE_BINARY_DIR} -name *.gcda -delete
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    )
-endif()

@@ -23,10 +23,11 @@
 ################################################################################
 
 import os
+import re
 from argparse import ArgumentParser
 from typing import Any, Dict, List, Optional
 
-from Tensile.Common import coVersionMap
+from Tensile.Common import coVersionMap, printExit
 from Tensile.Common.Architectures import architectureMap
 from Tensile.Toolchain.Validators import ToolchainDefaults
 
@@ -177,7 +178,7 @@ def parseArguments(input: Optional[List[str]] = None) -> Dict[str, Any]:
         action="store_true",
         default=False,
         help="Do not remove the temporary build directory (may required hundreds of GBs of space)",
-    ),
+    )
     argParser.add_argument(
         "--logic-filter",
         dest="LogicFilter",
@@ -187,8 +188,29 @@ def parseArguments(input: Optional[List[str]] = None) -> Dict[str, Any]:
         help="Cutomsized logic filter, default is *, i.e. all logics."
         " Example: gfx942/Equality/* for building equality of gfx942 only",
     )
+    argParser.add_argument(
+        "--disable-asm-comments",
+        dest="DisableAsmComments",
+        action="store_true",
+        default=False,
+        help="Disable assembly comments in generated assembly code"
+    )
 
     args = argParser.parse_args()
+
+    # NOTE: The feature that allows predicate based tensilelite library builds
+    # via `--architecture=gfx950[id=XXXX]` is not fully supported until the
+    # tensilelite runtime lookup and selection for these predicates is complete.
+    # As a staged approach, the TensileCreateLibrary code to enable this feature
+    # is implemented, but will remain disabled until the work is complete.
+    predicatePattern = re.compile(r"\[(.*?)\]")
+    if predicatePattern.search(args.Architecture):
+        printExit(
+            "Predicate based tensilelite library builds are supported; however, since "
+            "the runtime lookup and selection of these libraries is incomplete, the "
+            "requested build is currently disabled. Please re-run using only the "
+            "architecture name without a predicate (`--architecture=gfx950`)."
+        )
 
     arguments = {}
     arguments["RuntimeLanguage"] = args.RuntimeLanguage
@@ -196,6 +218,7 @@ def parseArguments(input: Optional[List[str]] = None) -> Dict[str, Any]:
     arguments["Architecture"] = args.Architecture
     arguments["LazyLibraryLoading"] = args.LazyLibraryLoading
     arguments["EnableMarker"] = args.EnableMarker
+    arguments["DisableAsmComments"] = args.DisableAsmComments
     if args.CmakeCxxCompiler:
         os.environ["CMAKE_CXX_COMPILER"] = args.CmakeCxxCompiler
     arguments["LogicFormat"] = args.LogicFormat

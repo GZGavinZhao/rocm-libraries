@@ -35,6 +35,7 @@
 #include <rocRoller/CodeGen/MemoryInstructions.hpp>
 #include <rocRoller/CommandSolution.hpp>
 #include <rocRoller/ExecutableKernel.hpp>
+#include <rocRoller/ExpressionTransformations.hpp>
 #include <rocRoller/GPUArchitecture/GPUArchitectureLibrary.hpp>
 #include <rocRoller/KernelArguments.hpp>
 #include <rocRoller/Operations/Command.hpp>
@@ -491,16 +492,22 @@ namespace MemoryInstructionsTest
 
     INSTANTIATE_TEST_SUITE_P(MemoryInstructionsTests, MemoryInstructionsTest, supportedISATuples());
 
-    struct BufferMemoryInstructionsTest : public GPUContextFixtureParam<int>
+    struct BufferMemoryInstructionsTest : public GPUContextFixtureParam<int, bool>
     {
         int numBytesParam()
         {
             return std::get<1>(GetParam());
         }
 
+        bool useBufferExprParam()
+        {
+            return std::get<2>(GetParam());
+        }
+
         void genBufferTest()
         {
-            int N = numBytesParam();
+            int  N             = numBytesParam();
+            bool useBufferExpr = useBufferExprParam();
 
             auto k = m_context->kernel();
 
@@ -533,10 +540,33 @@ namespace MemoryInstructionsTest
 
                 co_yield v_a->allocate();
 
-                auto bufDesc = std::make_shared<rocRoller::BufferDescriptor>(m_context);
-                co_yield bufDesc->setup();
-                co_yield bufDesc->setBasePointer(s_a);
-                co_yield bufDesc->setSize(Register::Value::Literal(N));
+                std::shared_ptr<rocRoller::BufferDescriptor> bufDesc;
+
+                if(!useBufferExpr)
+                {
+                    bufDesc = std::make_shared<rocRoller::BufferDescriptor>(m_context);
+                    co_yield bufDesc->setup();
+                    co_yield bufDesc->setBasePointer(s_a);
+                    co_yield bufDesc->setSize(Register::Value::Literal(N));
+                }
+                else
+                {
+                    auto v = Register::Value::Placeholder(m_context,
+                                                          Register::Type::Scalar,
+                                                          {DataType::None, PointerType::Buffer},
+                                                          1);
+
+                    // Manually create buffer descriptor expression
+                    uint32_t opts = rocRoller::BufferDescriptor::getDefaultOptionsValue(m_context);
+                    auto     bufferExpr = Expression::literal(Buffer{0, 0, 0, 0});
+                    bufferExpr = bfc(Expression::literal(2147483548), bufferExpr, 0, 64, 32);
+                    bufferExpr = bfc(Expression::literal(opts), bufferExpr, 0, 96, 32);
+                    bufferExpr = bfc(s_a->expression(), bufferExpr, 0, 0, 64);
+                    bufferExpr = bfc(Expression::literal(N), bufferExpr, 0, 64, 32);
+
+                    co_yield Expression::generate(v, bufferExpr, m_context);
+                    bufDesc = std::make_shared<rocRoller::BufferDescriptor>(v, m_context);
+                }
 
                 auto bufInstOpts = rocRoller::BufferInstructionOptions();
 
@@ -605,7 +635,8 @@ namespace MemoryInstructionsTest
     INSTANTIATE_TEST_SUITE_P(BufferMemoryInstructionsTest,
                              BufferMemoryInstructionsTest,
                              ::testing::Combine(supportedISAValues(),
-                                                ::testing::Values(1, 2, 3, 4, 8, 16, 20, 44, 47)));
+                                                ::testing::Values(1, 2, 3, 4, 8, 16, 20, 44, 47),
+                                                ::testing::Values(false, true)));
 
     struct MemoryInstructionsLDSTest : public CurrentGPUContextFixture
     {
@@ -1049,14 +1080,14 @@ namespace MemoryInstructionsTest
             };
 
             clearOutput();
-            setKernelOptions({.storeGlobalWidth = 4});
+            setKernelOptions({{.storeGlobalWidth = 4}});
 
             m_context->schedule(kb());
             expected = R"(global_store_dwordx4 v[4:5], v[0:3] off)";
             EXPECT_THAT(NormalizedSource(output()), testing::HasSubstr(NormalizedSource(expected)));
 
             clearOutput();
-            setKernelOptions({.storeGlobalWidth = 3});
+            setKernelOptions({{.storeGlobalWidth = 3}});
             m_context->schedule(kb());
             expected = R"(
             global_store_dwordx3 v[4:5], v[0:2] off
@@ -1065,7 +1096,7 @@ namespace MemoryInstructionsTest
             EXPECT_THAT(NormalizedSource(output()), testing::HasSubstr(NormalizedSource(expected)));
 
             clearOutput();
-            setKernelOptions({.storeGlobalWidth = 2});
+            setKernelOptions({{.storeGlobalWidth = 2}});
             m_context->schedule(kb());
             expected = R"(
             global_store_dwordx2 v[4:5], v[0:1] off
@@ -1074,7 +1105,7 @@ namespace MemoryInstructionsTest
             EXPECT_THAT(NormalizedSource(output()), testing::HasSubstr(NormalizedSource(expected)));
 
             clearOutput();
-            setKernelOptions({.storeGlobalWidth = 1});
+            setKernelOptions({{.storeGlobalWidth = 1}});
             m_context->schedule(kb());
             expected = R"(
             global_store_dword v[4:5], v0 off
@@ -1092,7 +1123,7 @@ namespace MemoryInstructionsTest
             };
 
             clearOutput();
-            setKernelOptions({.loadGlobalWidth = 4});
+            setKernelOptions({{.loadGlobalWidth = 4}});
             m_context->schedule(kb());
             expected = R"(
             global_load_dwordx4 v[0:3], v[4:5] off
@@ -1100,7 +1131,7 @@ namespace MemoryInstructionsTest
             EXPECT_THAT(NormalizedSource(output()), testing::HasSubstr(NormalizedSource(expected)));
 
             clearOutput();
-            setKernelOptions({.loadGlobalWidth = 3});
+            setKernelOptions({{.loadGlobalWidth = 3}});
             m_context->schedule(kb());
             expected = R"(
             global_load_dwordx3 v[0:2], v[4:5] off
@@ -1109,7 +1140,7 @@ namespace MemoryInstructionsTest
             EXPECT_THAT(NormalizedSource(output()), testing::HasSubstr(NormalizedSource(expected)));
 
             clearOutput();
-            setKernelOptions({.loadGlobalWidth = 2});
+            setKernelOptions({{.loadGlobalWidth = 2}});
             m_context->schedule(kb());
             expected = R"(
             global_load_dwordx2 v[0:1], v[4:5] off
@@ -1118,7 +1149,7 @@ namespace MemoryInstructionsTest
             EXPECT_THAT(NormalizedSource(output()), testing::HasSubstr(NormalizedSource(expected)));
 
             clearOutput();
-            setKernelOptions({.loadGlobalWidth = 1});
+            setKernelOptions({{.loadGlobalWidth = 1}});
             m_context->schedule(kb());
             expected = R"(
             global_load_dword v0, v[4:5] off
@@ -1136,13 +1167,13 @@ namespace MemoryInstructionsTest
             };
 
             clearOutput();
-            setKernelOptions({.storeLocalWidth = 4});
+            setKernelOptions({{.storeLocalWidth = 4}});
             m_context->schedule(kb());
             expected = R"(ds_write_b128 v6, v[0:3])";
             EXPECT_THAT(NormalizedSource(output()), testing::HasSubstr(NormalizedSource(expected)));
 
             clearOutput();
-            setKernelOptions({.storeLocalWidth = 3});
+            setKernelOptions({{.storeLocalWidth = 3}});
             m_context->schedule(kb());
             expected = R"(
             ds_write_b96 v6, v[0:2]
@@ -1151,7 +1182,7 @@ namespace MemoryInstructionsTest
             EXPECT_THAT(NormalizedSource(output()), testing::HasSubstr(NormalizedSource(expected)));
 
             clearOutput();
-            setKernelOptions({.storeLocalWidth = 2});
+            setKernelOptions({{.storeLocalWidth = 2}});
             m_context->schedule(kb());
             expected = R"(
             ds_write_b64 v6, v[0:1]
@@ -1160,7 +1191,7 @@ namespace MemoryInstructionsTest
             EXPECT_THAT(NormalizedSource(output()), testing::HasSubstr(NormalizedSource(expected)));
 
             clearOutput();
-            setKernelOptions({.storeLocalWidth = 1});
+            setKernelOptions({{.storeLocalWidth = 1}});
             m_context->schedule(kb());
             expected = R"(
             ds_write_b32 v6, v0
@@ -1180,7 +1211,7 @@ namespace MemoryInstructionsTest
             };
 
             clearOutput();
-            setKernelOptions({.loadLocalWidth = 4});
+            setKernelOptions({{.loadLocalWidth = 4}});
             m_context->schedule(kb());
             expected = R"(
             ds_read_b128 v[0:3], v6
@@ -1188,7 +1219,7 @@ namespace MemoryInstructionsTest
             EXPECT_THAT(NormalizedSource(output()), testing::HasSubstr(NormalizedSource(expected)));
 
             clearOutput();
-            setKernelOptions({.loadLocalWidth = 3});
+            setKernelOptions({{.loadLocalWidth = 3}});
             m_context->schedule(kb());
             expected = R"(
             ds_read_b96 v[0:2], v6
@@ -1197,7 +1228,7 @@ namespace MemoryInstructionsTest
             EXPECT_THAT(NormalizedSource(output()), testing::HasSubstr(NormalizedSource(expected)));
 
             clearOutput();
-            setKernelOptions({.loadLocalWidth = 2});
+            setKernelOptions({{.loadLocalWidth = 2}});
             m_context->schedule(kb());
             expected = R"(
             ds_read_b64 v[0:1], v6
@@ -1206,7 +1237,7 @@ namespace MemoryInstructionsTest
             EXPECT_THAT(NormalizedSource(output()), testing::HasSubstr(NormalizedSource(expected)));
 
             clearOutput();
-            setKernelOptions({.loadLocalWidth = 1});
+            setKernelOptions({{.loadLocalWidth = 1}});
             m_context->schedule(kb());
             expected = R"(
             ds_read_b32 v0, v6

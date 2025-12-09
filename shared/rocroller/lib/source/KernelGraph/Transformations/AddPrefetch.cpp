@@ -24,6 +24,24 @@
  *
  *******************************************************************************/
 
+#include <rocRoller/KernelGraph/Transforms/AddPrefetch.hpp>
+#include <rocRoller/KernelGraph/Transforms/AddPrefetch_detail.hpp>
+
+#include <rocRoller/CommandSolution.hpp>
+#include <rocRoller/Expression.hpp>
+#include <rocRoller/KernelOptions_detail.hpp>
+
+#include <rocRoller/KernelGraph/ControlGraph/ControlGraph.hpp>
+#include <rocRoller/KernelGraph/ControlGraph/LastRWTracer.hpp>
+#include <rocRoller/KernelGraph/ControlGraph/Operation.hpp>
+#include <rocRoller/KernelGraph/ControlToCoordinateMapper.hpp>
+#include <rocRoller/KernelGraph/CoordinateGraph/Dimension.hpp>
+#include <rocRoller/KernelGraph/Transforms/Simplify.hpp>
+#include <rocRoller/KernelGraph/Utils.hpp>
+#include <rocRoller/KernelGraph/Visitors.hpp>
+#include <rocRoller/Operations/Command.hpp>
+#include <rocRoller/Operations/Operations.hpp>
+
 /**
 @class AddPrefetch
 @brief Add prefetching for load operations.
@@ -140,22 +158,6 @@ the scheduling of operations in unrolled segment $u$ are:
 
 */
 
-#include <rocRoller/CommandSolution.hpp>
-#include <rocRoller/Expression.hpp>
-#include <rocRoller/KernelGraph/ControlGraph/ControlGraph.hpp>
-#include <rocRoller/KernelGraph/ControlGraph/LastRWTracer.hpp>
-#include <rocRoller/KernelGraph/ControlGraph/Operation.hpp>
-#include <rocRoller/KernelGraph/ControlToCoordinateMapper.hpp>
-#include <rocRoller/KernelGraph/CoordinateGraph/Dimension.hpp>
-#include <rocRoller/KernelGraph/Transforms/AddPrefetch.hpp>
-#include <rocRoller/KernelGraph/Transforms/Simplify.hpp>
-#include <rocRoller/KernelGraph/Utils.hpp>
-#include <rocRoller/KernelGraph/Visitors.hpp>
-#include <rocRoller/Operations/Command.hpp>
-#include <rocRoller/Operations/Operations.hpp>
-
-#include <rocRoller/KernelGraph/Transforms/AddPrefetch_detail.hpp>
-
 namespace rocRoller
 {
     namespace KernelGraph
@@ -195,6 +197,25 @@ namespace rocRoller
                         if(fl->loopName != rocRoller::KLOOP)
                             continue;
 
+                        // Prefetching requires LDS for double-buffering. Check if there are
+                        // any StoreLDSTile operations in the loop body. Without LDS stores,
+                        // prefetching doesn't make sense (e.g., BufferToVGPR load path).
+                        auto isBodyPredicate = kgraph.control.isElemType<Body>();
+                        auto isStoreLDSTile  = kgraph.control.isElemType<StoreLDSTile>();
+                        auto bodyEdges
+                            = filter(isBodyPredicate,
+                                     kgraph.control.getNeighbours<GD::Downstream>(*maybeForLoop))
+                                  .to<std::vector>();
+                        auto storeLDSTileNodes
+                            = kgraph.control.findNodes(bodyEdges, isStoreLDSTile, GD::Downstream);
+                        if(storeLDSTileNodes.empty())
+                        {
+                            Log::debug("KernelGraph::AddPrefetch(): ForLoop {} has no LDS stores, "
+                                       "skipping prefetch",
+                                       *maybeForLoop);
+                            continue;
+                        }
+
                         auto forLoopCoord     = getForLoopCoords(*maybeForLoop, kgraph).first;
                         auto maybeUnrollCoord = findUnrollNeighbour(kgraph, forLoopCoord);
                         if(forLoopCoordinates.contains(forLoopCoord)
@@ -224,6 +245,36 @@ namespace rocRoller
                 }
 
                 return rv;
+            }
+
+            std::optional<int> getLoadForExchange(int exchangeTag, KernelGraph const& graph)
+            {
+                auto isLoadPredicate = [&](int operation) -> bool {
+                    auto maybeLoad = graph.control.get<LoadTiled>(operation);
+                    return maybeLoad.has_value();
+                };
+
+                auto findConnections = [&](int coordinate) -> std::optional<int> {
+                    for(auto c : graph.mapper.getCoordinateConnections(coordinate))
+                        if(isLoadPredicate(c.control))
+                            return c.control;
+                    return {};
+                };
+
+                auto exchangeTileTag = graph.mapper.get<MacroTile>(exchangeTag);
+                for(auto const edge :
+                    graph.coordinates.getNeighbours<GD::Downstream>(exchangeTileTag))
+                {
+                    auto maybeIndex = graph.coordinates.get<Index>(edge);
+                    if(!maybeIndex)
+                        continue;
+                    auto indexTileTag
+                        = only(graph.coordinates.getNeighbours<GD::Downstream>(edge)).value();
+                    auto tag = findConnections(indexTileTag);
+                    if(tag.has_value())
+                        return tag;
+                }
+                return {};
             }
 
             bool isLoadForExchange(int loadTag, KernelGraph const& graph)
@@ -375,8 +426,6 @@ namespace rocRoller
 
         KernelGraph AddPrefetch::apply(KernelGraph const& original)
         {
-            TIMER(t, "KernelGraph::AddPrefetch");
-
             auto graph = original;
             removeRedundantBodyEdges(graph);
             removeRedundantNOPs(graph);
@@ -487,9 +536,12 @@ namespace rocRoller
             for(auto exchangeTag : graph.control.findNodes(starts, isExchangePredicate))
             {
                 auto destTileTag = graph.mapper.get(exchangeTag, NaryArgument::DEST);
+
+                auto pred = m_context->kernelOptions()->scaleSkipPermlane ? CT::isEdge<Segment>
+                                                                          : CT::isEdge<Index>;
+
                 auto tileTags
-                    = graph.coordinates.getInputNodeIndices(destTileTag, CT::isEdge<Index>)
-                          .to<std::vector>();
+                    = graph.coordinates.getInputNodeIndices(destTileTag, pred).to<std::vector>();
                 AssertFatal(!tileTags.empty(), "swizzle indexed tiles not found");
                 for(auto tileTag : tileTags)
                     loadMap[tileTag] = getTopSetCoordinate(graph, exchangeTag);
@@ -596,8 +648,8 @@ namespace rocRoller
             }
 
             // StoreLDS next
-            auto storeLDScounter = 0;
-            auto direct2LDSTile  = 0;
+            auto storeLDScounter   = 0;
+            auto direct2LDSCounter = 0;
             for(auto load : loadsByUnroll[0])
             {
                 logger->debug("  prefetch: pre-loop commit lds: unroll {} user {}", 0, load.user);
@@ -609,12 +661,20 @@ namespace rocRoller
                 graph.mapper.connect<LDS>(preBarrier, ldsTileTag, storeLDScounter);
                 storeLDScounter++;
 
-                auto ldsTile = graph.coordinates.getNode<LDS>(ldsTileTag);
-                if(ldsTile.isDirect2LDS)
-                    direct2LDSTile++;
+                auto op = std::get<Operation>(graph.control.getElement(load.globalOperation));
+                if(std::holds_alternative<LoadTiled>(op))
+                {
+                    auto macroTile = graph.coordinates.get<MacroTile>(
+                        graph.mapper.get<MacroTile>(load.globalOperation));
+                    if(macroTile && macroTile->memoryType == MemoryType::WAVE_Direct2LDS)
+                    {
+                        direct2LDSCounter++;
+                    }
+                }
             }
 
-            auto prefetchDirect2LDS = ((direct2LDSTile > 0) && (storeLDScounter == direct2LDSTile));
+            auto prefetchDirect2LDS
+                = ((direct2LDSCounter > 0) && (storeLDScounter == direct2LDSCounter));
 
             graph.control.addElement(Body(), {scope}, {preChain[0]});
             for(uint i = 1; i < preChain.size(); ++i)
@@ -846,20 +906,21 @@ namespace rocRoller
                                       barrier);
                     }
 
-                    logger->debug("  prefetch: in-loop: prefetchDirect2LDS && mixMemOps: "
-                                  "ordering {} to {}",
-                                  globalLoads[globalLoads.size() - 1].globalChain,
-                                  segmentBoundaries[u + 1]);
-                    graph.control.addElement(Sequence(),
-                                             {globalLoads[globalLoads.size() - 1].globalChain},
-                                             {segmentBoundaries[u + 1]});
-                    logger->debug("  prefetch: in-loop: prefetchDirect2LDS && mixMemOps: "
-                                  "ordering {} to {}",
-                                  globalStores[globalStores.size() - 1].ldsChain,
-                                  segmentBoundaries[u + 1]);
-                    graph.control.addElement(Sequence(),
-                                             {globalStores[globalStores.size() - 1].ldsChain},
-                                             {segmentBoundaries[u + 1]});
+                    auto successor = (u == numUnroll - 1) ? barrier : segmentBoundaries[u + 1];
+
+                    Log::debug("  prefetch: in-loop: prefetchDirect2LDS && mixMemOps: "
+                               "ordering {} to {}",
+                               globalLoads[globalLoads.size() - 1].globalChain,
+                               successor);
+                    graph.control.addElement(
+                        Sequence(), {globalLoads[globalLoads.size() - 1].globalChain}, {successor});
+
+                    Log::debug("  prefetch: in-loop: prefetchDirect2LDS && mixMemOps: "
+                               "ordering {} to {}",
+                               globalStores[globalStores.size() - 1].ldsChain,
+                               successor);
+                    graph.control.addElement(
+                        Sequence(), {globalStores[globalStores.size() - 1].ldsChain}, {successor});
                 }
                 else
                 {
@@ -955,7 +1016,7 @@ namespace rocRoller
             }
 
             //
-            // Make exchanges happen first!
+            // Make exchange scale loads happen first!
             //
             {
                 auto isExchangePredicate = graph.control.isElemType<Exchange>();
@@ -964,44 +1025,41 @@ namespace rocRoller
                 auto exchanges
                     = graph.control.findNodes(bodies, isExchangePredicate).to<std::vector>();
 
-                for(auto exchangeTag : exchanges)
+                std::map<int, int> scaleLoadU;
+
+                for(auto const exchangeTag : exchanges)
                 {
                     auto prefetchGlobalU
                         = (m_exchangeSegment[exchangeTag] + numInFlight) % numUnroll;
 
+                    auto loadTag = getLoadForExchange(exchangeTag, graph);
+
+                    // When loading pre-swizzled scales from LDS, no
+                    // LoadTiled node exists.
+                    if(!loadTag)
+                    {
+                        Log::debug("No matching load operation found for Exchange({}); assuming it "
+                                   "is pre-swizzled from LDS.",
+                                   exchangeTag);
+                        continue;
+                    }
+
+                    auto const search = scaleLoadU.find(loadTag.value());
+                    if(search == scaleLoadU.end() || search->second > prefetchGlobalU)
+                        scaleLoadU[loadTag.value()] = prefetchGlobalU;
+                }
+
+                for(auto const [loadTag, u] : scaleLoadU)
+                {
                     std::unordered_set<int> orderBeforeTags;
-                    for(auto info : loadsByUnroll[prefetchGlobalU])
+                    for(auto const info : loadsByUnroll[u])
                         orderBeforeTags.insert(info.globalChain);
 
-                    for(auto orderBeforeTag : orderBeforeTags)
-                        graph.control.addElement(Sequence(), {exchangeTag}, {orderBeforeTag});
+                    auto topOp = getTopSetCoordinate(graph, loadTag);
+                    for(auto const orderBeforeTag : orderBeforeTags)
+                        graph.control.addElement(Sequence(), {topOp}, {orderBeforeTag});
                 }
             }
-        }
-
-        std::optional<int>
-            getExchangeForMultiply(KernelGraph const& graph, int multiplyTag, NaryArgument arg)
-        {
-            auto isIndexPredicate    = rocRoller::KernelGraph::CoordinateGraph::isEdge<Index>;
-            auto isExchangePredicate = [&](int operation) -> bool {
-                auto maybeExchange = graph.control.get<Exchange>(operation);
-                return maybeExchange.has_value();
-            };
-
-            int scale = graph.mapper.get(multiplyTag, Connections::typeArgument<MacroTile>(arg));
-            if(scale == -1)
-                return {};
-
-            auto tileTag = only(graph.coordinates.getOutputNodeIndices(scale, isIndexPredicate));
-            if(not tileTag)
-                return {};
-
-            auto connections = graph.mapper.getCoordinateConnections(tileTag.value());
-            for(auto connection : connections)
-                if(isExchangePredicate(connection.control))
-                    return connection.control;
-
-            return {};
         }
 
         void updateExchangeColouring(std::map<int, int>&    operationUnroll,
@@ -1376,11 +1434,10 @@ namespace rocRoller
                     for(auto op :
                         k.control.depthFirstVisit(starts, onlyFollowSequenceEdges, GD::Downstream))
                     {
-                        auto outgoing
-                            = k.control.getNeighbours(op, GD::Downstream).to<std::unordered_set>();
+                        auto outgoing = k.control.getNeighbours(op, GD::Downstream);
                         for(auto tag : m_prefetchDelete[forLoop])
                         {
-                            outgoing.erase(tag);
+                            std::erase(outgoing, tag);
                         }
                         if(outgoing.empty())
                         {
@@ -1393,6 +1450,8 @@ namespace rocRoller
 
         ConstraintStatus AcceptablePrefetchNodes(const KernelGraph& k)
         {
+            TIMER(t, "Constraint::AcceptablePrefetchNodes");
+
             ConstraintStatus retval;
 
             for(auto [forLoop, numUnroll] : findPrefetch(k))

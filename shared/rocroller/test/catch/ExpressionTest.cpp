@@ -227,13 +227,11 @@ namespace ExpressionTest
 
             // expr4
             v_bfe_i32 v4, v0, 3, 7
-            v_mov_b32 v5, 255
-            v_and_b32 v4, v5, v4
+            v_and_b32 v4, 255, v4
 
             // expr5
             v_bfe_i32 v5, v0, 4, 7
-            v_mov_b32 v6, 255
-            v_and_b32 v5, v6, v5
+            v_and_b32 v5, 255, v5
 
             // expr6
             v_bfe_i32 v6, v0, 5, 17
@@ -322,6 +320,58 @@ namespace ExpressionTest
          // Allocated : 1 SGPR (Value: Half): s0
          s_bfe_u32 s0, v7, 1048576 //    expr.offset = 0
          )";
+
+        {
+            auto rb = std::make_shared<Register::Value>(
+                context.get(), Register::Type::Vector, DataType::UInt64, 1);
+            rb->setName("rb");
+            rb->allocateNow();
+
+            auto b = rb->expression();
+
+            auto expr10 = bfe(DataType::UInt32, a, 0, 32); // redundant full register
+            auto expr11
+                = bfe(DataType::UInt32, b, 0, 32); // full register from Uint64 (2 registers)
+            auto expr12
+                = bfe(DataType::UInt32, b, 32, 32); // full register from Uint64 (2 registers)
+            auto expr13 = bfe(DataType::UInt64, b, 0, 64); // redundant full register from UInt64
+            auto expr14 = bfe(DataType::Int32, b, 0, 32); // full register from Uint64 (2 registers)
+
+            auto dest10 = std::make_shared<Register::Value>(
+                context.get(), Register::Type::Vector, DataType::UInt32, 1);
+            auto dest11 = std::make_shared<Register::Value>(
+                context.get(), Register::Type::Vector, DataType::UInt32, 1);
+            auto dest12 = std::make_shared<Register::Value>(
+                context.get(), Register::Type::Vector, DataType::UInt32, 1);
+            auto dest13 = std::make_shared<Register::Value>(
+                context.get(), Register::Type::Vector, DataType::UInt64, 1);
+            auto dest14 = std::make_shared<Register::Value>(
+                context.get(), Register::Type::Vector, DataType::Int32, 1);
+
+            context.get()->schedule(Expression::generate(dest10, expr10, context.get()));
+            context.get()->schedule(Expression::generate(dest11, expr11, context.get()));
+            context.get()->schedule(Expression::generate(dest12, expr12, context.get()));
+            context.get()->schedule(Expression::generate(dest13, expr13, context.get()));
+            context.get()->schedule(Expression::generate(dest14, expr14, context.get()));
+        }
+
+        expected += R"(
+            // expr10 - full register extraction should optimize away
+            v_mov_b32 v7, v0
+
+            // expr11 - extracting first register from UInt64 to UInt32
+            v_mov_b32 v12, v10
+
+            // expr12 - extracting second register from UInt64 to UInt32
+            v_mov_b32 v13, v11
+
+            // expr13 - full register extraction from UInt64 to UInt64
+            v_mov_b32 v14, v10
+            v_mov_b32 v15, v11
+
+            // expr14 - extracting first register from UInt64 to Int32
+            v_mov_b32 v16, v10
+        )";
 
         CHECK(NormalizedSource(context.output()) == NormalizedSource(expected));
     }
@@ -824,16 +874,14 @@ namespace ExpressionTest
 
             // X is v[36:37]:2xH and Y is v[38:41]:H (and Z is same as Y)
             // Then Y <- X + Y will be: Add(v[36:37]:2xH, v[38:41]:H)
-            v_mov_b32 v42, 65535
-            v_and_b32 v44, v42, v36
-            v_lshrrev_b32 v45, 16, v36
-            v_add_f16 v38, v44, v38
-            v_add_f16 v39, v45, v39
-            v_mov_b32 v43, 65535
-            v_and_b32 v44, v43, v37
-            v_lshrrev_b32 v45, 16, v37
-            v_add_f16 v40, v44, v40
-            v_add_f16 v41, v45, v41
+            v_and_b32 v42, 65535, v36
+            v_lshrrev_b32 v43, 16, v36
+            v_add_f16 v38, v42, v38
+            v_add_f16 v39, v43, v39
+            v_and_b32 v42, 65535, v37
+            v_lshrrev_b32 v43, 16, v37
+            v_add_f16 v40, v42, v40
+            v_add_f16 v41, v43, v41
         )";
 
         CHECK(NormalizedSource(context.output()) == NormalizedSource(result));
@@ -1252,10 +1300,9 @@ namespace ExpressionTest
             CHECK(rSgprBool32 == resultType(op(sgprBool32, sgprBool32)));
         }
 
-        SECTION("Arithmetic ternary")
+        SECTION("MultiplyAdd")
         {
-            auto op = GENERATE_COPY(
-                Expression::multiplyAdd, Expression::addShiftL, Expression::shiftLAdd);
+            auto op = Expression::multiplyAdd;
 
             CAPTURE(op(vgprFloat, vgprFloat, vgprFloat));
 
@@ -1275,6 +1322,92 @@ namespace ExpressionTest
             CHECK(rSgprHalf == resultType(op(sgprHalf, sgprHalf, sgprHalf)));
             CHECK(rSgprHalfx2 == resultType(op(sgprHalfx2, sgprHalfx2, sgprHalfx2)));
             CHECK(rSgprBool32 == resultType(op(sgprBool32, sgprBool32, sgprBool32)));
+        }
+
+        SECTION("AddShiftL")
+        {
+            auto op = Expression::addShiftL;
+
+            CAPTURE(op(vgprFloat, vgprFloat, vgprFloat));
+
+            CHECK(rVgprFloat == resultType(op(vgprFloat, vgprFloat, vgprFloat)));
+            CHECK(rVgprDouble == resultType(op(vgprDouble, vgprDouble, vgprDouble)));
+            CHECK(rVgprInt32 == resultType(op(vgprInt32, vgprInt32, vgprInt32)));
+            CHECK(rVgprInt64 == resultType(op(vgprInt64, vgprInt64, vgprInt64)));
+            CHECK(rVgprUInt32 == resultType(op(vgprUInt32, vgprUInt32, vgprUInt32)));
+            CHECK(rVgprHalf == resultType(op(vgprHalf, vgprHalf, vgprHalf)));
+            CHECK(rVgprHalfx2 == resultType(op(vgprHalfx2, vgprHalfx2, vgprHalfx2)));
+            CHECK(rVgprBool32 == resultType(op(vgprBool32, vgprBool32, vgprBool32)));
+            CHECK(rSgprFloat == resultType(op(sgprFloat, sgprFloat, sgprFloat)));
+            CHECK(rSgprDouble == resultType(op(sgprDouble, sgprDouble, sgprDouble)));
+            CHECK(rSgprInt32 == resultType(op(sgprInt32, sgprInt32, sgprInt32)));
+            CHECK(rSgprInt64 == resultType(op(sgprInt64, sgprInt64, sgprInt64)));
+            CHECK(rSgprUInt32 == resultType(op(sgprUInt32, sgprUInt32, sgprUInt32)));
+            CHECK(rSgprHalf == resultType(op(sgprHalf, sgprHalf, sgprHalf)));
+            CHECK(rSgprHalfx2 == resultType(op(sgprHalfx2, sgprHalfx2, sgprHalfx2)));
+            CHECK(rSgprBool32 == resultType(op(sgprBool32, sgprBool32, sgprBool32)));
+
+            // Shift not considered in promotion
+            CHECK(rVgprInt32 == resultType(op(vgprInt32, vgprInt32, vgprUInt32)));
+            CHECK(rVgprInt32 == resultType(op(vgprInt32, vgprInt32, vgprInt32)));
+            CHECK(rVgprInt32 == resultType(op(vgprInt32, vgprInt32, vgprUInt64)));
+            CHECK(rVgprInt32 == resultType(op(vgprInt32, vgprInt32, vgprInt64)));
+            CHECK(rVgprUInt32 == resultType(op(vgprUInt32, vgprUInt32, vgprUInt32)));
+            CHECK(rVgprUInt32 == resultType(op(vgprUInt32, vgprUInt32, vgprInt32)));
+            CHECK(rVgprUInt32 == resultType(op(vgprUInt32, vgprUInt32, vgprUInt64)));
+            CHECK(rVgprUInt32 == resultType(op(vgprUInt32, vgprUInt32, vgprInt64)));
+
+            CHECK(rVgprUInt64 == resultType(op(vgprUInt64, vgprUInt64, vgprUInt32)));
+            CHECK(rVgprUInt64 == resultType(op(vgprUInt64, vgprUInt64, vgprInt32)));
+            CHECK(rVgprUInt64 == resultType(op(vgprUInt64, vgprUInt64, vgprUInt64)));
+            CHECK(rVgprUInt64 == resultType(op(vgprUInt64, vgprUInt64, vgprInt64)));
+            CHECK(rVgprUInt64 == resultType(op(vgprUInt64, vgprUInt64, vgprUInt32)));
+            CHECK(rVgprUInt64 == resultType(op(vgprUInt64, vgprUInt64, vgprInt32)));
+            CHECK(rVgprUInt64 == resultType(op(vgprUInt64, vgprUInt64, vgprUInt64)));
+            CHECK(rVgprUInt64 == resultType(op(vgprUInt64, vgprUInt64, vgprInt64)));
+        }
+
+        SECTION("ShiftLAdd")
+        {
+            auto op = Expression::shiftLAdd;
+
+            CAPTURE(op(vgprFloat, vgprFloat, vgprFloat));
+
+            CHECK(rVgprFloat == resultType(op(vgprFloat, vgprFloat, vgprFloat)));
+            CHECK(rVgprDouble == resultType(op(vgprDouble, vgprDouble, vgprDouble)));
+            CHECK(rVgprInt32 == resultType(op(vgprInt32, vgprInt32, vgprInt32)));
+            CHECK(rVgprInt64 == resultType(op(vgprInt64, vgprInt64, vgprInt64)));
+            CHECK(rVgprUInt32 == resultType(op(vgprUInt32, vgprUInt32, vgprUInt32)));
+            CHECK(rVgprHalf == resultType(op(vgprHalf, vgprHalf, vgprHalf)));
+            CHECK(rVgprHalfx2 == resultType(op(vgprHalfx2, vgprHalfx2, vgprHalfx2)));
+            CHECK(rVgprBool32 == resultType(op(vgprBool32, vgprBool32, vgprBool32)));
+            CHECK(rSgprFloat == resultType(op(sgprFloat, sgprFloat, sgprFloat)));
+            CHECK(rSgprDouble == resultType(op(sgprDouble, sgprDouble, sgprDouble)));
+            CHECK(rSgprInt32 == resultType(op(sgprInt32, sgprInt32, sgprInt32)));
+            CHECK(rSgprInt64 == resultType(op(sgprInt64, sgprInt64, sgprInt64)));
+            CHECK(rSgprUInt32 == resultType(op(sgprUInt32, sgprUInt32, sgprUInt32)));
+            CHECK(rSgprHalf == resultType(op(sgprHalf, sgprHalf, sgprHalf)));
+            CHECK(rSgprHalfx2 == resultType(op(sgprHalfx2, sgprHalfx2, sgprHalfx2)));
+            CHECK(rSgprBool32 == resultType(op(sgprBool32, sgprBool32, sgprBool32)));
+
+            // Shift not considered in promotion
+            CHECK(rVgprInt32 == resultType(op(vgprInt32, vgprUInt32, vgprInt32)));
+            CHECK(rVgprInt32 == resultType(op(vgprInt32, vgprInt32, vgprInt32)));
+            CHECK(rVgprInt32 == resultType(op(vgprInt32, vgprUInt64, vgprInt32)));
+            CHECK(rVgprInt32 == resultType(op(vgprInt32, vgprInt64, vgprInt32)));
+            CHECK(rVgprUInt32 == resultType(op(vgprUInt32, vgprUInt32, vgprUInt32)));
+            CHECK(rVgprUInt32 == resultType(op(vgprUInt32, vgprInt32, vgprUInt32)));
+            CHECK(rVgprUInt32 == resultType(op(vgprUInt32, vgprUInt64, vgprUInt32)));
+            CHECK(rVgprUInt32 == resultType(op(vgprUInt32, vgprInt64, vgprUInt32)));
+
+            CHECK(rVgprUInt64 == resultType(op(vgprUInt64, vgprUInt32, vgprUInt64)));
+            CHECK(rVgprUInt64 == resultType(op(vgprUInt64, vgprInt32, vgprUInt64)));
+            CHECK(rVgprUInt64 == resultType(op(vgprUInt64, vgprUInt64, vgprUInt64)));
+            CHECK(rVgprUInt64 == resultType(op(vgprUInt64, vgprInt64, vgprUInt64)));
+            CHECK(rVgprUInt64 == resultType(op(vgprUInt64, vgprUInt32, vgprUInt64)));
+            CHECK(rVgprUInt64 == resultType(op(vgprUInt64, vgprInt32, vgprUInt64)));
+            CHECK(rVgprUInt64 == resultType(op(vgprUInt64, vgprUInt64, vgprUInt64)));
+            CHECK(rVgprUInt64 == resultType(op(vgprUInt64, vgprInt64, vgprUInt64)));
         }
 
         SECTION("Conditional")
@@ -1743,6 +1876,64 @@ namespace ExpressionTest
         }
     }
 
+    TEST_CASE("Ignore converts between same-width integral types", "[expression][codegen]")
+    {
+        auto context = TestContext::ForDefaultTarget();
+
+        const auto make_expression = [&](auto type) {
+            auto r
+                = std::make_shared<Register::Value>(context.get(), Register::Type::Vector, type, 1);
+            r->allocateNow();
+            return r->expression();
+        };
+
+        SECTION("Int32")
+        {
+            auto a = make_expression(DataType::Int32);
+
+            auto expr = convert(DataType::UInt32, a) + convert(DataType::UInt32, a);
+
+            Register::ValuePtr destReg;
+            context.get()->schedule(Expression::generate(destReg, expr, context.get()));
+
+            auto result = R"(
+                v_add_u32 v1, v0, v0
+            )";
+
+            CHECK(NormalizedSource(context.output()) == NormalizedSource(result));
+        }
+
+        SECTION("Int32 Mixed")
+        {
+            auto a = make_expression(DataType::Int32);
+            auto b = make_expression(DataType::UInt32);
+
+            auto expr = convert(DataType::UInt32, a) + convert(DataType::Int32, b);
+
+            Register::ValuePtr destReg;
+            context.get()->schedule(Expression::generate(destReg, expr, context.get()));
+
+            auto result = R"(
+                v_add_u32 v2, v0, v1
+            )";
+
+            CHECK(NormalizedSource(context.output()) == NormalizedSource(result));
+        }
+
+        SECTION("Int64 Mixed")
+        {
+            auto a = make_expression(DataType::Int64);
+            auto b = make_expression(DataType::UInt64);
+
+            auto expr = convert(DataType::UInt64, a) + convert(DataType::Int64, b);
+
+            Register::ValuePtr destReg;
+            context.get()->schedule(Expression::generate(destReg, expr, context.get()));
+
+            CHECK(context.output().find("mov") == std::string::npos);
+        }
+    }
+
     TEST_CASE("Expression evaluate comparisons", "[expression]")
     {
         auto command = std::make_shared<Command>();
@@ -2097,6 +2288,294 @@ namespace ExpressionTest
         CHECK(std::get<float>(evaluate(exp7)) == static_cast<float>(d));
     }
 
+    TEST_CASE("Expression evaluate BitfieldCombine", "[expression]")
+    {
+        using namespace Expression;
+
+        SECTION("Evaluation 1")
+        {
+            auto const srcOffset = 0u;
+            auto const dstOffset = 0u;
+            auto const width     = 32u;
+            auto       src       = literal(1222u);
+            auto       dst       = literal(0u);
+
+            auto expr = bfc(src, dst, srcOffset, dstOffset, width);
+
+            CHECK(std::get<uint32_t>(evaluate(expr)) == 1222u);
+        }
+
+        SECTION("Evaluation 2")
+        {
+            auto const srcOffset = 0u;
+            auto const dstOffset = 16u;
+            auto const width     = 8u;
+            auto       src       = literal(0u);
+            auto       dst       = literal(0xffffffffu);
+
+            auto expr = bfc(src, dst, srcOffset, dstOffset, width);
+
+            CHECK(std::get<uint32_t>(evaluate(expr)) == 0xff00ffffu);
+        }
+
+        SECTION("Evaluation 3")
+        {
+            auto const srcOffset = 16u;
+            auto const dstOffset = 0;
+            auto const width     = 16u;
+            auto       src       = literal(0xffff0000u);
+            auto       dst       = literal(0u);
+
+            auto expr = bfc(src, dst, srcOffset, dstOffset, width);
+
+            CHECK(std::get<uint32_t>(evaluate(expr)) == 0x0000ffffu);
+        }
+
+        SECTION("Evaluation 4")
+        {
+            auto const srcOffset = 8u;
+            auto const dstOffset = 16u;
+            auto const width     = 8u;
+            auto       src       = literal(0x0000ff00u);
+            auto       dst       = literal(0u);
+
+            auto expr = bfc(src, dst, srcOffset, dstOffset, width);
+
+            CHECK(std::get<uint32_t>(evaluate(expr)) == 0x00ff0000u);
+        }
+
+        SECTION("Evaluation 5 - UInt32 source to Raw32 destination")
+        {
+            auto const srcOffset = 8u;
+            auto const dstOffset = 4u;
+            auto const width     = 12u;
+            auto       src       = literal(0x00abcd00u);
+            auto       dst       = literal(Raw32(0xffff0000u));
+
+            auto expr = bfc(src, dst, srcOffset, dstOffset, width);
+
+            CHECK(std::get<Raw32>(evaluate(expr)).value == 0xffffbcd0u);
+        }
+
+        SECTION("Evaluation 6 - UInt64 source to Raw32 destination")
+        {
+            auto const srcOffset = 16u;
+            auto const dstOffset = 8u;
+            auto const width     = 16u;
+            auto       src       = literal(0x123456789abcdef0ull, DataType::UInt64);
+            auto       dst       = literal(Raw32(0x000000ffu));
+
+            auto expr = bfc(src, dst, srcOffset, dstOffset, width);
+
+            CHECK(std::get<Raw32>(evaluate(splitBitfieldCombine(expr))).value == 0x009abcffu);
+        }
+
+        SECTION("Evaluation 7 - UInt32 to Raw32 full width")
+        {
+            auto const srcOffset = 0u;
+            auto const dstOffset = 0u;
+            auto const width     = 32u;
+            auto       src       = literal(0xdeadbeefu);
+            auto       dst       = literal(Raw32(0u));
+
+            auto expr = bfc(src, dst, srcOffset, dstOffset, width);
+
+            CHECK(std::get<Raw32>(evaluate(expr)).value == 0xdeadbeefu);
+        }
+    }
+
+    TEST_CASE("Expression evaluate BitfieldExtract", "[expression]")
+    {
+        using namespace Expression;
+
+        SECTION("Evaluation 1")
+        {
+            auto const offset = 0u;
+            auto const width  = 32u;
+            auto       src    = literal(1222u);
+
+            auto expr = bfe(DataType::UInt32, src, offset, width);
+
+            CHECK(std::get<uint32_t>(evaluate(expr)) == 1222u);
+        }
+
+        SECTION("Evaluation 2")
+        {
+            auto const offset = 0u;
+            auto const width  = 8u;
+            auto       src    = literal(0x000000ffu);
+
+            auto expr = bfe(DataType::UInt32, src, offset, width);
+
+            CHECK(std::get<uint32_t>(evaluate(expr)) == 0x000000ffu);
+        }
+
+        SECTION("Evaluation 3")
+        {
+            auto const offset = 16u;
+            auto const width  = 8u;
+            auto       src    = literal(0x00ff0000u);
+
+            auto expr = bfe(DataType::UInt32, src, offset, width);
+
+            CHECK(std::get<uint32_t>(evaluate(expr)) == 0x000000ffu);
+        }
+
+        SECTION("Evaluation 4")
+        {
+            auto const offset = 48u;
+            auto const width  = 8u;
+            auto       src    = literal(0x00ff000000000000ul);
+
+            auto expr = bfe(DataType::UInt32, src, offset, width);
+
+            CHECK(std::get<uint32_t>(evaluate(expr)) == 0x000000ffu);
+        }
+
+        SECTION("Evaluation 5")
+        {
+            auto const offset = 2u;
+            auto const width  = 30u;
+            auto       src1   = literal(4u);
+            auto       src2   = literal(-4);
+
+            auto expr1 = bfe(DataType::UInt32, src1, offset, width);
+            auto expr2 = bfe(DataType::Int32, src2, offset, width);
+
+            CHECK(std::get<uint32_t>(evaluate(expr1)) == 1u);
+            CHECK(std::get<int32_t>(evaluate(expr2)) == -1);
+        }
+
+        SECTION("Evaluation 6 - UInt64 to UInt32 truncation")
+        {
+            auto const offset = 0u;
+            auto const width  = 32u;
+            auto       src    = literal(0x123456789abcdef0ull, DataType::UInt64);
+
+            auto expr = bfe(DataType::UInt32, src, offset, width);
+
+            CHECK(std::get<uint32_t>(evaluate(expr)) == 0x9abcdef0u);
+        }
+
+        SECTION("Evaluation 7 - UInt64 to Raw32 truncation")
+        {
+            auto const offset = 0u;
+            auto const width  = 32u;
+            auto       src    = literal(0xfedcba9876543210ull, DataType::UInt64);
+
+            auto expr = bfe(DataType::Raw32, src, offset, width);
+
+            CHECK(std::get<Raw32>(evaluate(expr)).value == 0x76543210u);
+        }
+
+        SECTION("Evaluation 8 - Int64 to Int32 truncation with sign extension")
+        {
+            auto const offset = 0u;
+            auto const width  = 32u;
+            auto       src    = literal(-1ll, DataType::Int64);
+
+            auto expr = bfe(DataType::Int32, src, offset, width);
+
+            CHECK(std::get<int32_t>(evaluate(expr)) == -1);
+        }
+    }
+
+    TEST_CASE("Expression evaluate reinterpret", "[expression]")
+    {
+        using namespace Expression;
+
+        SECTION("Int32 to UInt32")
+        {
+            int32_t value  = -1;
+            auto    result = reinterpret(CommandArgumentValue(value), DataType::UInt32);
+            CHECK(std::get<uint32_t>(result) == 0xFFFFFFFFu);
+        }
+
+        SECTION("UInt32 to Int32")
+        {
+            uint32_t value  = 0xFFFFFFFFu;
+            auto     result = reinterpret(CommandArgumentValue(value), DataType::Int32);
+            CHECK(std::get<int32_t>(result) == -1);
+        }
+
+        SECTION("Int32 to Raw32")
+        {
+            int32_t value  = -1;
+            auto    result = reinterpret(CommandArgumentValue(value), DataType::Raw32);
+            CHECK(std::get<Raw32>(result).value == 0xFFFFFFFFu);
+        }
+
+        SECTION("Raw32 to UInt32")
+        {
+            Raw32 value(0xDEADBEEFu);
+            auto  result = reinterpret(CommandArgumentValue(value), DataType::UInt32);
+            CHECK(std::get<uint32_t>(result) == 0xDEADBEEFu);
+        }
+
+        SECTION("Raw32 to Int32")
+        {
+            Raw32 value(0x80000000u);
+            auto  result = reinterpret(CommandArgumentValue(value), DataType::Int32);
+            CHECK(std::get<int32_t>(result) == static_cast<int32_t>(0x80000000));
+        }
+
+        SECTION("UInt32 to Raw32")
+        {
+            uint32_t value  = 0x12345678u;
+            auto     result = reinterpret(CommandArgumentValue(value), DataType::Raw32);
+            CHECK(std::get<Raw32>(result).value == 0x12345678u);
+        }
+
+        SECTION("Int64 to UInt64")
+        {
+            int64_t value  = -1LL;
+            auto    result = reinterpret(CommandArgumentValue(value), DataType::UInt64);
+            CHECK(std::get<uint64_t>(result) == 0xFFFFFFFFFFFFFFFFull);
+        }
+
+        SECTION("UInt64 to Int64")
+        {
+            uint64_t value  = 0x8000000000000000ull;
+            auto     result = reinterpret(CommandArgumentValue(value), DataType::Int64);
+            CHECK(std::get<int64_t>(result) == static_cast<int64_t>(0x8000000000000000ull));
+        }
+
+        SECTION("Float to UInt32")
+        {
+            float value  = 1.0f;
+            auto  result = reinterpret(CommandArgumentValue(value), DataType::UInt32);
+            // 1.0f in IEEE 754
+            CHECK(std::get<uint32_t>(result) == 0x3F800000u);
+        }
+
+        SECTION("UInt32 to Float")
+        {
+            uint32_t value  = 0x40000000u; // 2.0f in IEEE 754
+            auto     result = reinterpret(CommandArgumentValue(value), DataType::Float);
+            CHECK(std::get<float>(result) == 2.0f);
+        }
+
+        SECTION("Double to UInt64")
+        {
+            double value  = 1.0;
+            auto   result = reinterpret(CommandArgumentValue(value), DataType::UInt64);
+            // 1.0 in IEEE 754 double
+            CHECK(std::get<uint64_t>(result) == 0x3FF0000000000000ull);
+        }
+
+        SECTION("Invalid reinterpret - different sizes")
+        {
+            int32_t value = 42;
+            CHECK_THROWS_AS(reinterpret(CommandArgumentValue(value), DataType::Int64), FatalError);
+        }
+
+        SECTION("Invalid reinterpret - unsupported type")
+        {
+            int32_t value = 42;
+            CHECK_THROWS_AS(reinterpret(CommandArgumentValue(value), DataType::None), FatalError);
+        }
+    }
+
     TEST_CASE("Expression generate dataflow tags", "[expression][codegen]")
     {
         auto context = TestContext::ForDefaultTarget();
@@ -2185,7 +2664,7 @@ namespace ExpressionTest
         context.get()->schedule(Expression::generate(destReg, expr1 ^ expr2, context.get()));
 
         auto result = R"(
-            v_add_i32 v1, -5, v0
+            v_add_i32 v1, v0, -5
             v_and_b32 v1, -5, v0
             v_or_b32 v1, -5, v0
             v_xor_b32 v1, -5, v0
@@ -2337,5 +2816,291 @@ namespace ExpressionTest
 
         CHECK(Expression::complexity(intExpr / intExpr)
               > Expression::complexity(intExpr + intExpr));
+    }
+
+    TEST_CASE("Expression kernel arguments", "[expression][utility]")
+    {
+        namespace XP  = Expression;
+        using strings = std::unordered_set<std::string>;
+
+        auto karg0 = std::make_shared<AssemblyKernelArgument>("KernelArg0", DataType::Int32);
+        auto karg1 = std::make_shared<AssemblyKernelArgument>("KernelArg1", DataType::Int32);
+        auto karg2 = std::make_shared<AssemblyKernelArgument>("KernelArg2", DataType::Int32);
+
+        auto kargExp0 = std::make_shared<XP::Expression>(karg0);
+        auto kargExp1 = std::make_shared<XP::Expression>(karg1);
+        auto kargExp2 = std::make_shared<XP::Expression>(karg2);
+
+        CHECK(referencedKernelArguments(kargExp0) == strings({"KernelArg0"}));
+
+        CHECK(referencedKernelArguments((kargExp0 + kargExp0) + XP::literal(5))
+              == strings({"KernelArg0"}));
+
+        CHECK(referencedKernelArguments((kargExp0 + kargExp1) + XP::literal(5))
+              == strings({"KernelArg0", "KernelArg1"}));
+
+        CHECK(referencedKernelArguments(
+                  Expression::conditional(kargExp0, kargExp1, (kargExp2 + XP::literal(5))))
+              == strings({"KernelArg0", "KernelArg1", "KernelArg2"}));
+
+        SECTION("a")
+        {
+            auto scaledMM = std::make_shared<XP::Expression>(Expression::ScaledMatrixMultiply{
+                kargExp0, XP::literal(3), XP::literal(2), XP::literal(3), XP::literal(9)});
+
+            CHECK(referencedKernelArguments(scaledMM) == strings({"KernelArg0"}));
+        }
+
+        SECTION("b")
+        {
+            auto scaledMM = std::make_shared<XP::Expression>(Expression::ScaledMatrixMultiply{
+                XP::literal(1), kargExp1, XP::literal(3), XP::literal(2), XP::literal(3)});
+
+            CHECK(referencedKernelArguments(scaledMM) == strings({"KernelArg1"}));
+        }
+
+        SECTION("c")
+        {
+            auto scaledMM = std::make_shared<XP::Expression>(Expression::ScaledMatrixMultiply{
+                XP::literal(3), XP::literal(1), kargExp2, XP::literal(2), XP::literal(3)});
+
+            CHECK(referencedKernelArguments(scaledMM) == strings({"KernelArg2"}));
+        }
+
+        SECTION("sa")
+        {
+            auto scaledMM = std::make_shared<XP::Expression>(Expression::ScaledMatrixMultiply{
+                XP::literal(2), XP::literal(3), XP::literal(1), kargExp0, XP::literal(3)});
+
+            CHECK(referencedKernelArguments(scaledMM) == strings({"KernelArg0"}));
+        }
+
+        SECTION("sb")
+        {
+            auto scaledMM = std::make_shared<XP::Expression>(Expression::ScaledMatrixMultiply{
+                XP::literal(3), XP::literal(2), XP::literal(3), XP::literal(1), kargExp1});
+
+            CHECK(referencedKernelArguments(scaledMM) == strings({"KernelArg1"}));
+        }
+    }
+
+    TEST_CASE("Raw32 expression and evaluation", "[expression][raw32]")
+    {
+        using Expression::literal;
+
+        auto raw32One    = literal(rocRoller::Raw32(1u));
+        auto unsignedOne = literal(uint32_t(1u));
+        auto unsignedTwo = literal(uint32_t(2u));
+        auto signedOne   = literal(int32_t(1));
+        auto floatOne    = literal(1.0f);
+
+        CHECK_THROWS_AS(unsignedOne << raw32One, FatalError);
+        CHECK_THROWS_AS(unsignedOne >> raw32One, FatalError);
+        CHECK_THROWS_AS(unsignedOne + raw32One, FatalError);
+        CHECK_THROWS_AS(unsignedOne - raw32One, FatalError);
+        CHECK_THROWS_AS(unsignedOne * raw32One, FatalError);
+        CHECK_THROWS_AS(unsignedOne % raw32One, FatalError);
+        CHECK_THROWS_AS(unsignedOne >= raw32One, FatalError);
+        CHECK_THROWS_AS(unsignedOne <= raw32One, FatalError);
+        CHECK_THROWS_AS(unsignedOne > raw32One, FatalError);
+        CHECK_THROWS_AS(unsignedOne < raw32One, FatalError);
+        CHECK_THROWS_AS(unsignedOne == raw32One, FatalError);
+        CHECK_THROWS_AS(unsignedOne != raw32One, FatalError);
+        CHECK_THROWS_AS(Expression::exp(raw32One), FatalError);
+        CHECK_THROWS_AS(Expression::exp2(raw32One), FatalError);
+
+        auto raw32Two = literal(rocRoller::Raw32(2u));
+        CHECK_NOTHROW(raw32Two == raw32One);
+        CHECK_NOTHROW(raw32Two != raw32One);
+
+        {
+            // Test shift left
+            auto expr = raw32One << unsignedOne;
+            CHECK_NOTHROW(evaluate(expr));
+        }
+
+        {
+            // Test shift right
+            auto expr = raw32One >> unsignedOne;
+            CHECK_NOTHROW(evaluate(expr));
+        }
+
+        {
+            // Test bitwise OR
+            auto expr = unsignedOne | raw32One;
+            CHECK_NOTHROW(evaluate(expr));
+
+            auto expr2 = raw32One | unsignedOne;
+            CHECK_NOTHROW(evaluate(expr2));
+        }
+
+        {
+            // Test bitwise AND
+            auto expr = unsignedOne & raw32One;
+            CHECK_NOTHROW(evaluate(expr));
+
+            auto expr2 = raw32One & unsignedOne;
+            CHECK_NOTHROW(evaluate(expr2));
+        }
+
+        {
+            // Test bitwise negate
+            auto expr = ~raw32One;
+            CHECK_NOTHROW(evaluate(expr));
+        }
+
+        {
+            // Test conversion
+            auto expr = std::make_shared<Expression::Expression>(
+                Expression::Convert{raw32One, "", rocRoller::DataType::UInt32});
+            CHECK_NOTHROW(evaluate(expr + unsignedOne));
+        }
+
+        SECTION("multiplyHigh")
+        {
+            CHECK_THROWS_AS(Expression::multiplyHigh(raw32One, unsignedOne), FatalError);
+            CHECK_THROWS_AS(Expression::multiplyHigh(unsignedOne, raw32One), FatalError);
+            CHECK_THROWS_AS(Expression::multiplyHigh(raw32One, raw32Two), FatalError);
+            CHECK_NOTHROW(evaluate(Expression::multiplyHigh(unsignedOne, unsignedTwo)));
+        }
+
+        SECTION("multiplyAdd")
+        {
+            CHECK_THROWS_AS(Expression::multiplyAdd(raw32One, unsignedOne, unsignedTwo),
+                            FatalError);
+            CHECK_THROWS_AS(Expression::multiplyAdd(unsignedOne, raw32One, unsignedTwo),
+                            FatalError);
+            CHECK_THROWS_AS(Expression::multiplyAdd(unsignedOne, unsignedTwo, raw32One),
+                            FatalError);
+            CHECK_THROWS_AS(Expression::multiplyAdd(raw32One, raw32Two, unsignedOne), FatalError);
+            CHECK_NOTHROW(evaluate(Expression::multiplyAdd(unsignedOne, unsignedTwo, unsignedOne)));
+        }
+
+        SECTION("addShiftL")
+        {
+            CHECK_THROWS_AS(Expression::addShiftL(raw32One, unsignedOne, unsignedTwo), FatalError);
+            CHECK_THROWS_AS(Expression::addShiftL(unsignedOne, raw32One, unsignedTwo), FatalError);
+            CHECK_THROWS_AS(Expression::addShiftL(unsignedOne, unsignedTwo, raw32One), FatalError);
+            CHECK_NOTHROW(evaluate(Expression::addShiftL(unsignedOne, unsignedTwo, unsignedOne)));
+        }
+
+        SECTION("shiftLAdd")
+        {
+            CHECK_THROWS_AS(evaluate(Expression::shiftLAdd(raw32One, unsignedOne, unsignedTwo)),
+                            FatalError); // Type mismatch after shift
+            CHECK_THROWS_AS(Expression::shiftLAdd(unsignedOne, raw32One, unsignedTwo), FatalError);
+            CHECK_THROWS_AS(Expression::shiftLAdd(unsignedOne, unsignedTwo, raw32One), FatalError);
+            CHECK_NOTHROW(evaluate(Expression::shiftLAdd(unsignedOne, unsignedTwo, unsignedOne)));
+        }
+
+        SECTION("magicMultiple")
+        {
+            CHECK_THROWS_AS(Expression::magicMultiple(raw32One), FatalError);
+            CHECK_NOTHROW(evaluate(Expression::magicMultiple(unsignedTwo)));
+        }
+
+        SECTION("magicShifts")
+        {
+            CHECK_THROWS_AS(Expression::magicShifts(raw32One), FatalError);
+            CHECK_NOTHROW(evaluate(Expression::magicShifts(unsignedTwo)));
+        }
+
+        SECTION("magicShiftAndSign")
+        {
+            CHECK_THROWS_AS(Expression::magicShiftAndSign(raw32One), FatalError);
+            CHECK_NOTHROW(evaluate(Expression::magicShiftAndSign(signedOne)));
+        }
+    }
+
+    TEST_CASE("Code gen for BitfieldCombine", "[expression][codegen]")
+    {
+        auto context = TestContext::ForDefaultTarget();
+
+        auto ra = std::make_shared<Register::Value>(
+            context.get(), Register::Type::Vector, DataType::Int32, 1);
+        ra->setName("ra");
+        ra->allocateNow();
+
+        auto rb = std::make_shared<Register::Value>(
+            context.get(), Register::Type::Vector, DataType::Int32, 1);
+        rb->setName("rb");
+        rb->allocateNow();
+
+        auto srcExpr = ra->expression();
+        auto dstExpr = rb->expression();
+
+        auto const srcOffset = 10u;
+        auto const dstOffset = 4u;
+        auto const width     = 7u;
+
+        SECTION("Lowering Basic")
+        {
+            auto bfc = std::make_shared<Expression::Expression>(
+                Expression::BitfieldCombine{srcExpr, dstExpr, "", srcOffset, dstOffset, width});
+
+            Register::ValuePtr dest;
+            context.get()->schedule(Expression::generate(dest, bfc, context.get()));
+
+            // 130048     = 00000000000000011111110000000000
+            // 4294965263 = 11111111111111111111100000001111
+            std::string expected = R"(
+                v_and_b32 v2, 130048, v0
+                v_and_b32 v3, 4294965263, v1
+                v_lshrrev_b32 v4, 6, v2
+                v_or_b32 v2, v4, v3
+            )";
+
+            CHECK(NormalizedSource(context.output()) == NormalizedSource(expected));
+        }
+
+        SECTION("Lowering with srcIsZero")
+        {
+            auto bfc = std::make_shared<Expression::Expression>(Expression::BitfieldCombine{
+                srcExpr, dstExpr, "", srcOffset, dstOffset, width, true});
+
+            Register::ValuePtr dest;
+            context.get()->schedule(Expression::generate(dest, bfc, context.get()));
+
+            std::string expected = R"(
+                v_lshrrev_b32 v2, 6, v0
+                v_and_b32 v3, 4294965263, v1
+                v_or_b32 v4, v2, v3
+            )";
+
+            CHECK(NormalizedSource(context.output()) == NormalizedSource(expected));
+        }
+
+        SECTION("Lowering with dstIsZero")
+        {
+            auto bfc = std::make_shared<Expression::Expression>(Expression::BitfieldCombine{
+                srcExpr, dstExpr, "", srcOffset, dstOffset, width, std::nullopt, true});
+
+            Register::ValuePtr dest;
+            context.get()->schedule(Expression::generate(dest, bfc, context.get()));
+
+            std::string expected = R"(
+                v_and_b32 v2, 130048, v0
+                v_lshrrev_b32 v3, 6, v2
+                v_or_b32 v2, v3, v1
+            )";
+
+            CHECK(NormalizedSource(context.output()) == NormalizedSource(expected));
+        }
+
+        SECTION("Lowering with srcIsZero & dstIsZero")
+        {
+            auto bfc = std::make_shared<Expression::Expression>(Expression::BitfieldCombine{
+                srcExpr, dstExpr, "", srcOffset, dstOffset, width, true, true});
+
+            Register::ValuePtr dest;
+            context.get()->schedule(Expression::generate(dest, bfc, context.get()));
+
+            std::string expected = R"(
+                v_lshrrev_b32 v2, 6, v0
+                v_or_b32 v3, v2, v1
+            )";
+
+            CHECK(NormalizedSource(context.output()) == NormalizedSource(expected));
+        }
     }
 }

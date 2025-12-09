@@ -26,13 +26,17 @@
 
 #pragma once
 
-#include <rocRoller/Context_fwd.hpp>
 #include <rocRoller/Expression_fwd.hpp>
+
+#include <rocRoller/Context_fwd.hpp>
+#include <rocRoller/KernelGraph/RegisterTagManager_fwd.hpp>
 
 namespace rocRoller
 {
     namespace Expression
     {
+        using ExpressionTransformType = std::function<ExpressionPtr(ExpressionPtr)>;
+
         ExpressionPtr identity(ExpressionPtr expr);
 
         /**
@@ -68,9 +72,9 @@ namespace rocRoller
 
         /**
          * Gets expressions which can be used to compute magic division of denominator.
-         * 
+         *
          * Returns [magicMultiple, magicShift, magicSign]
-         * 
+         *
          * If denominator is unsigned, magicSign will be nullptr.
          */
         std::tuple<ExpressionPtr, ExpressionPtr, ExpressionPtr>
@@ -89,6 +93,16 @@ namespace rocRoller
          * - Opposite shifts by same amount: mask off bits that would be zeroed out.
          */
         ExpressionPtr combineShifts(ExpressionPtr expr);
+
+        /**
+         * Splits BitfieldCombine expressions that target more than 32 bits into a Concatenate of 32 bit sub-expressions.
+         */
+        ExpressionPtr splitBitfieldCombine(ExpressionPtr expr);
+
+        /**
+         * Splits uint64_t literal operands in a Concatenate expression into two Raw32 operands.
+         */
+        Concatenate splitConcatenate(Concatenate const& expr);
 
         /**
          * @brief Simplify expressions
@@ -113,6 +127,9 @@ namespace rocRoller
          * @return ExpressionPtr Transformed expression
          */
         ExpressionPtr fuseAssociative(ExpressionPtr expr);
+
+        ExpressionPtr dataFlowTagPropagation(ExpressionPtr             expr,
+                                             RegisterTagManager const& tagManager);
 
         /**
          * Resolve all DataFlowTags in the given expression.
@@ -141,6 +158,22 @@ namespace rocRoller
         ExpressionPtr lowerExponential(ExpressionPtr expr);
 
         /**
+         * @brief Propagate converts to input values
+         *
+         * @param expr Input expression
+         * @return ExpressionPtr Transformed expression
+         */
+        ExpressionPtr convertPropagation(ExpressionPtr expr);
+
+        ExpressionPtr makeScalar(ExpressionPtr expr);
+
+        /**
+         * @brief Replace unsigned ArithmeticShiftR with LogicalShiftR
+         *
+         */
+        ExpressionPtr lowerUnsignedArithmeticShiftR(ExpressionPtr expr);
+
+        /**
          * Helper (lambda/transducer) for applying all fast arithmetic transformations.
          *
          * Usage:
@@ -155,7 +188,10 @@ namespace rocRoller
             FastArithmetic() = delete;
             explicit FastArithmetic(ContextPtr);
 
-            ExpressionPtr operator()(ExpressionPtr) const;
+            ExpressionPtr                        operator()(ExpressionPtr) const;
+            std::vector<ExpressionTransformType> getTransforms() const;
+            ExpressionPtr                        applyTransforms(ExpressionPtr,
+                                                                 const std::vector<ExpressionTransformType>&) const;
 
         private:
             ContextPtr m_context;
@@ -179,5 +215,15 @@ namespace rocRoller
          * @return ExpressionPtr Transformed expression
          */
         ExpressionPtr lowerBitfieldValues(ExpressionPtr expr);
+
+        /**
+         * @brief Attempt to replace a BitfieldCombine expr with
+         * a composite expression consisting of shift and bitwise
+         * AND/OR
+         *
+         * @param expr Input expression
+         * @return ExpressionPtr Transformed expression
+         */
+        ExpressionPtr lowerBitfieldCombine(ExpressionPtr expr);
     }
 }

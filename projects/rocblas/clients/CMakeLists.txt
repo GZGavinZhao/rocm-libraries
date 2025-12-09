@@ -22,6 +22,45 @@
 
 cmake_minimum_required( VERSION 3.16.8 )
 
+function( apply_omp_settings lib_target_ )
+  if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND TARGET OpenMP::OpenMP_CXX)
+    set_target_properties( ${lib_target_} PROPERTIES
+      BUILD_RPATH "${HIP_CLANG_ROOT}/lib"
+    )
+    set_target_properties( ${lib_target_} PROPERTIES
+      INSTALL_RPATH "$ORIGIN/../llvm/lib"
+    )
+  elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND TARGET OpenMP::omp)
+    set_target_properties( ${lib_target_} PROPERTIES
+      BUILD_RPATH "${HIP_CLANG_ROOT}/${openmp_LIB_DIR}"
+    )
+    set_target_properties( ${lib_target_} PROPERTIES
+      INSTALL_RPATH "$ORIGIN/../llvm/${openmp_LIB_DIR}"
+    )
+    target_compile_options( ${lib_target_} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${COMMON_CXX_OPTIONS}> )
+  endif()
+endfunction()
+
+function(find_libblis compiler)
+  file(GLOB DIRS "/opt/AMD/aocl/aocl-linux-${compiler}-*")
+  list(SORT DIRS)
+  list(REVERSE DIRS)
+
+  foreach(dir IN LISTS DIRS)
+    get_filename_component(dir_name "${dir}" NAME)
+
+    if(dir_name MATCHES "aocl-linux-${compiler}-([0-9]+)\\.([0-9]+)\\.([0-9]+)")
+      set(library_path "${dir}/${compiler}/lib_ILP64/libblis-mt.a")
+      if(EXISTS "${library_path}")
+        set(BLAS_LIBRARY "${library_path}" PARENT_SCOPE)
+        set(BLIS_INCLUDE_DIR "${dir}/${compiler}/include_ILP64" PARENT_SCOPE)
+        message(STATUS "Found BLIS at: ${library_path}")
+        return()
+      endif()
+    endif()
+  endforeach()
+endfunction()
+
 # This has to be initialized before the project() command appears
 # Set the default of CMAKE_BUILD_TYPE to be release, unless user specifies with -D.  MSVC_IDE does not use CMAKE_BUILD_TYPE
 if( NOT DEFINED CMAKE_CONFIGURATION_TYPES AND NOT DEFINED CMAKE_BUILD_TYPE )
@@ -69,20 +108,22 @@ endif()
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-# if it fails to find OpenMP compile and link flags in strange configurations it can just use non-parallel reference computation
-# if there is no omp.h to find the client compilation will fail and this should be obvious, used to be REQUIRED
-find_package(OpenMP)
-
-if (TARGET OpenMP::OpenMP_CXX)
-  set( COMMON_LINK_LIBS "OpenMP::OpenMP_CXX")
-  get_filename_component(LIBOMP_PATH "${OpenMP_omp_LIBRARY}" PATH)
-  if (NOT WIN32)
-    list( APPEND COMMON_LINK_LIBS "-Wl,-rpath=${LIBOMP_PATH}")
-  endif()
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  # Look for openmp config in ROCm install to populate openmp_LIB_DIR and openmp_LIB_INSTALL_DIR
+  find_package(OpenMP CONFIG PATHS "${HIP_CLANG_ROOT}/lib/cmake")
 endif()
 
-if (WIN32)
-  list( APPEND COMMON_LINK_LIBS "libomp")
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND TARGET OpenMP::omp)
+  set( COMMON_LINK_LIBS "OpenMP::omp")
+  message(STATUS "Found openmp-config.cmake at ${OpenMP_DIR}")
+  list( APPEND COMMON_CXX_OPTIONS "-fopenmp") # this is linux only target
+else()
+  # if it fails to find OpenMP compile and link flags in strange configurations it can just use non-parallel reference computation
+  # if there is no omp.h to find the client compilation will fail and this should be obvious, used to be REQUIRED
+  find_package(OpenMP)
+  if (TARGET OpenMP::OpenMP_CXX)
+    set( COMMON_LINK_LIBS "OpenMP::OpenMP_CXX")
+  endif()
 endif()
 
 if (TARGET Threads::Threads)
@@ -110,49 +151,41 @@ if ( NOT hip_FOUND )
   find_package( hip REQUIRED CONFIG PATHS ${ROCM_PATH} )
 endif( )
 
-if( BUILD_CLIENTS_SAMPLES )
-  add_subdirectory( samples )
-endif( )
-
 if( BUILD_CLIENTS_BENCHMARKS OR BUILD_CLIENTS_TESTS)
   if ( NOT WIN32 )
     if (LINK_BLIS)
-      if(EXISTS          "/opt/AMD/aocl/aocl-linux-gcc-5.0.0/gcc/lib_ILP64/libblis-mt.a" )
-        set( BLAS_LIBRARY /opt/AMD/aocl/aocl-linux-gcc-5.0.0/gcc/lib_ILP64/libblis-mt.a )
-        set( BLIS_INCLUDE_DIR /opt/AMD/aocl/aocl-linux-gcc-5.0.0/gcc/include_ILP64/ )
-      elseif(EXISTS          "/opt/AMD/aocl/aocl-linux-gcc-4.2.0/gcc/lib_ILP64/libblis-mt.a" )
-        set( BLAS_LIBRARY /opt/AMD/aocl/aocl-linux-gcc-4.2.0/gcc/lib_ILP64/libblis-mt.a )
-        set( BLIS_INCLUDE_DIR /opt/AMD/aocl/aocl-linux-gcc-4.2.0/gcc/include_ILP64/ )
-      elseif(EXISTS      "/opt/AMD/aocl/aocl-linux-aocc-4.1.0/aocc/lib_ILP64/libblis-mt.a" )
-        set( BLAS_LIBRARY /opt/AMD/aocl/aocl-linux-aocc-4.1.0/aocc/lib_ILP64/libblis-mt.a )
-        set( BLIS_INCLUDE_DIR /opt/AMD/aocl/aocl-linux-aocc-4.1.0/aocc/include_ILP64/ )
-        set( WARN_NOT_ILP64_PREFERRED true )
-      elseif(EXISTS      "/opt/AMD/aocl/aocl-linux-aocc-4.0/lib_ILP64/libblis-mt.a" )
-        set( BLAS_LIBRARY /opt/AMD/aocl/aocl-linux-aocc-4.0/lib_ILP64/libblis-mt.a )
-        set( BLIS_INCLUDE_DIR /opt/AMD/aocl/aocl-linux-aocc-4.0/include_ILP64/ )
-        set( WARN_NOT_ILP64_PREFERRED true )
-      elseif(EXISTS      "${BUILD_DIR}/deps/amd-blis/lib/ILP64/libblis-mt.a") # 4.0 and 4.1.0
-        set( BLAS_LIBRARY ${BUILD_DIR}/deps/amd-blis/lib/ILP64/libblis-mt.a )
-        set( BLIS_INCLUDE_DIR ${BUILD_DIR}/deps/amd-blis/include/ILP64 )
-        set( WARN_NOT_ILP64_PREFERRED true )
-      elseif(EXISTS      "${BUILD_DIR}/deps/blis/lib/libblis.a")
-        set( BLAS_LIBRARY ${BUILD_DIR}/deps/blis/lib/libblis.a )
-        set( BLIS_INCLUDE_DIR ${BUILD_DIR}/deps/blis/include/blis )
-        set( WARN_NOT_ILP64_PREFERRED true )
-      elseif(EXISTS      "/usr/local/lib/libblis.a")
-        set( BLAS_LIBRARY /usr/local/lib/libblis.a )
-        set( BLIS_INCLUDE_DIR /usr/local/include/blis )
-      else()
-        find_package(PkgConfig)
-        if(NOT PKG_CONFIG_FOUND)
-          message( FATAL_ERROR "Could not find libblis and pkgconfig is not available" )
+      set(BLAS_LIBRARY)
+      set(BLIS_INCLUDE_DIR)
+      find_libblis(gcc)
+      if(NOT BLAS_LIBRARY)
+        find_libblis(aocc)
+        set(WARN_NOT_ILP64_PREFERRED true) # found via aocc
+      endif()
+      if(NOT BLAS_LIBRARY)
+        set(WARN_NOT_ILP64_PREFERRED false) # reset warning, not found via installed aocc
+        if(EXISTS      "${BUILD_DIR}/deps/amd-blis/lib/ILP64/libblis-mt.a") # 4.0 and 4.1.0
+          set( BLAS_LIBRARY ${BUILD_DIR}/deps/amd-blis/lib/ILP64/libblis-mt.a )
+          set( BLIS_INCLUDE_DIR ${BUILD_DIR}/deps/amd-blis/include/ILP64 )
+          set( WARN_NOT_ILP64_PREFERRED true )
+        elseif(EXISTS      "${BUILD_DIR}/deps/blis/lib/libblis.a")
+          set( BLAS_LIBRARY ${BUILD_DIR}/deps/blis/lib/libblis.a )
+          set( BLIS_INCLUDE_DIR ${BUILD_DIR}/deps/blis/include/blis )
+          set( WARN_NOT_ILP64_PREFERRED true )
+        elseif(EXISTS      "/usr/local/lib/libblis.a")
+          set( BLAS_LIBRARY /usr/local/lib/libblis.a )
+          set( BLIS_INCLUDE_DIR /usr/local/include/blis )
         else()
-          pkg_search_module(PKGBLAS cblas)
-          if(PKGBLAS_FOUND)
-            set( BLAS_LIBRARY ${PKGBLAS_LIBRARIES} )
-            set( BLAS_INCLUDE_DIR ${PKGBLAS_INCLUDE_DIRS} )
+          find_package(PkgConfig)
+          if(NOT PKG_CONFIG_FOUND)
+            message( FATAL_ERROR "Could not find libblis and pkgconfig is not available" )
           else()
-            message( FATAL_ERROR "Could not find libblis and pkgconfig can not find any other implementation of cblas" )
+            pkg_search_module(PKGBLAS cblas)
+            if(PKGBLAS_FOUND)
+              set( BLAS_LIBRARY ${PKGBLAS_LIBRARIES} )
+              set( BLAS_INCLUDE_DIR ${PKGBLAS_INCLUDE_DIRS} )
+            else()
+              message( FATAL_ERROR "Could not find libblis and pkgconfig can not find any other implementation of cblas" )
+            endif()
           endif()
         endif()
       endif()
@@ -210,6 +243,10 @@ if( BUILD_CLIENTS_BENCHMARKS OR BUILD_CLIENTS_TESTS)
   endif( )
 
 endif()
+
+if( BUILD_CLIENTS_SAMPLES )
+  add_subdirectory( samples )
+endif( )
 
 set( ROCBLAS_COMMON "${PROJECT_BINARY_DIR}/staging/rocblas_common.yaml")
 add_custom_command( OUTPUT "${ROCBLAS_COMMON}"

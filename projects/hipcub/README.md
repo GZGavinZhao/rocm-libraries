@@ -189,6 +189,39 @@ static constexpr size_t seed_size = sizeof(seeds) / sizeof(seeds[0]);
 
 (3) Never modified this line.
 
+### Parallel testing using multiple GPUs
+
+hipCUB makes use of CTest's resource allocation feature to distribute tests across multiple GPUs in
+a balanced way. This can decrease the amount of time required to run the full test suite.
+To run tests in parallel:
+
+```shell
+# Go to the build directory
+cd projects/hipcub/build
+
+# Run the tests in parallel. 
+# The number of jobs is the number of cmake processes that will run in parallel.
+# Each test will be run on a separate GPU.
+ctest -j<number of jobs>
+```
+
+In order to make this work, at CMake configure time, hipCUB automatically generates a ctest "resource spec" file that 
+contains information about all of the GPUs available in the system. CTest uses the information in this file to distribute the 
+test jobs across devices. By default, all available devices are used when running tests in parallel.
+
+If you have several different types of GPUs installed and would like to limit the parallel test run to a single type
+of device, you can build hipCUB with the `-DGPU_TEST_TARGETS` cmake option. This option accepts a semicolon-delimited list of device IDs
+that you'd like to run tests on. For example, if you would like tests to be distributed to only gfx1100 and gfx942 devices, you could use the 
+following command:
+
+``` shell
+cd rocm-libraries/projects/hipcub
+cmake -DBUILD_TEST=ON -DGPU_TEST_TARGETS="gfx1100;gfx942" ../
+```
+
+When using the `GPU_TEST_TARGETS` cmake option, test names are prefixed with the gfx ID of the device (eg. `gfx1100-hipcub.BasicTest`). This allows you
+run device-specific groups of tests with ctest's `-R` option (eg. to run all gfx1100 tests, you could use `ctest -j<num jobs> -R "gfx1100-.*"`).
+
 ## Running benchmarks
 
 ```shell

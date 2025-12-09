@@ -221,6 +221,18 @@ if(BUILD_TEST)
     endif()
   endif()
 
+  # Used by tests to define their RESOURCE_GROUPS
+  set(DEFAULT_GPU_RESOURCE "gpus")
+
+  # Generate the resource spec file. This will contain a description of the GPUs available on the current machine.
+  execute_process(COMMAND cmake -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateResourceSpec.cmake
+                  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+                  RESULT_VARIABLE GEN_RES_SPEC_RESULT
+                  ERROR_VARIABLE  GEN_RES_SPEC_ERROR)
+  if(NOT (GEN_RES_SPEC_RESULT STREQUAL "0" AND GEN_RES_SPEC_ERROR STREQUAL ""))
+    message(WARNING "Warning: Unable to generate the ctest resource spec file - tests may run out of memory when run in parallel.")
+  endif()
+
   enable_testing()
   rocm_package_setup_client_component(tests)
   add_subdirectory(test)

@@ -288,7 +288,6 @@ inline void KernelArguments::append(std::string const&     name,
         return append<int8_t>(name, *val_ptr, true);
     }
     
-    // --- FIXED CASES ---
     case rocisa::DataType::ComplexFloat:
     {
         // Check if the variant holds a std::complex<float>
@@ -298,11 +297,9 @@ inline void KernelArguments::append(std::string const&     name,
             return append<std::complex<float>>(name, *val_ptr, true);
         }
 
-        // If not, check if it holds a float (and needs to be promoted)
         auto* float_ptr = std::get_if<float>(&value);
         if(float_ptr)
         {
-            // Promote the float to a complex<float>
             return append<std::complex<float>>(name, std::complex<float>(*float_ptr, 0.0f), true);
         }
 
@@ -329,8 +326,7 @@ inline void KernelArguments::append(std::string const&     name,
         // If it holds neither, throw an error
         throw std::runtime_error("Type mismatch: variant does not hold std::complex<double> or double");
     }
-    // --- END FIX ---
-
+    
     default:
         // You can add cases for Float8, BFloat8, etc. here
         throw std::runtime_error("Unsupported ConstantVariant append type.");

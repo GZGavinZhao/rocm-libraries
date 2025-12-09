@@ -114,6 +114,8 @@ namespace TensileLite
         TensorDescriptor scaleD("scaleD");
         TensorDescriptor scaleAlphaVec("scaleAlphaVec");
 
+		TensorOps nop;
+
         ContractionProblemGemm problem(a,
                                        b,
                                        c,
@@ -128,7 +130,11 @@ namespace TensileLite
                                        free,
                                        batch,
                                        bound,
-                                       beta);
+                                       beta,
+									   nop,
+									   nop,
+									   nop,
+									   nop);
 
         return problem;
     }
@@ -258,10 +264,6 @@ namespace TensileLite
         FreeIndices  free;
         BatchIndices batch;
         BoundIndices bound;
-        bool         aIsComplex = false;
-        bool         bIsComplex = false;
-        bool         cIsComplex = false;
-        bool         dIsComplex = false;
 
         std::string prefix = "Contraction_";
         if(identifier.find(prefix) != 0)
@@ -284,7 +286,7 @@ namespace TensileLite
 
         if(identifier.at(end - 1) == 'C')
         {
-            aIsComplex = true;
+            aOps.push_back(TensorOp::ComplexConjugate());
             end--;
         }
 
@@ -301,7 +303,7 @@ namespace TensileLite
 
         if(identifier.at(end - 1) == 'C')
         {
-            bIsComplex = true;
+            bOps.push_back(TensorOp::ComplexConjugate());
             end--;
         }
 
@@ -318,7 +320,7 @@ namespace TensileLite
 
         if(identifier.at(end - 1) == 'C')
         {
-            cIsComplex = true;
+            cOps.push_back(TensorOp::ComplexConjugate());
             end--;
         }
 
@@ -340,7 +342,7 @@ namespace TensileLite
 
         if(identifier.at(end - 1) == 'C')
         {
-            dIsComplex = true;
+            dOps.push_back(TensorOp::ComplexConjugate());
             end--;
         }
 
@@ -398,7 +400,6 @@ namespace TensileLite
         freeIndices  = std::move(free);
         batchIndices = std::move(batch);
         boundIndices = std::move(bound);
-        isComplex    = {aIsComplex, bIsComplex, cIsComplex, dIsComplex};
     }
 
     ContractionProblemGemm
@@ -420,15 +421,8 @@ namespace TensileLite
         TensorOps    aOps, bOps, cOps, dOps;
 
         IdentifierToIndices(
-            operationIdentifier, freeIndices, batchIndices, boundIndices, isComplex);
+            operationIdentifier, freeIndices, batchIndices, boundIndices, aOps, bOps, cOps, dOps);
 
-        for(size_t i = 0; i < isComplex.size(); i++)
-        {
-            if(isComplex[i])
-            {
-                std::runtime_error("Complex is not supported.");
-            }
-        }
 
         return FromIndexSizes(freeIndices,
                               batchIndices,
@@ -608,7 +602,8 @@ namespace TensileLite
                                                    BatchIndices const&     batchIndices,
                                                    BoundIndices const&     boundIndices,
                                                    double                  beta,
-                                                   size_t                  workspaceSize)
+                                                   size_t                  workspaceSize
+                                                   )
         : ContractionProblem(ContractionProblemGemm::TENSOR::TENSOR_COUNT)
         , m_freeIndices(freeIndices)
         , m_batchIndices(batchIndices)
@@ -1355,31 +1350,23 @@ namespace TensileLite
         rv += m_sumNames;
         rv += "_A";
         rv += aNames;
-        if(DataTypeInfo::Get(aTensor.dataType()).isComplex)
-        {
-            rv += "C";
-        }
+        for(auto const& op : m_aOps)
+            rv += op.suffix();
 
         rv += "_B";
         rv += bNames;
-        if(DataTypeInfo::Get(bTensor.dataType()).isComplex)
-        {
-            rv += "C";
-        }
+        for(auto const& op : m_bOps)
+            rv += op.suffix();
 
         rv += "_C";
         rv += cNames;
-        if(DataTypeInfo::Get(cTensor.dataType()).isComplex)
-        {
-            rv += "C";
-        }
+        for(auto const& op : m_cOps)
+            rv += op.suffix();
 
         rv += "_D";
         rv += dNames;
-        if(DataTypeInfo::Get(dTensor.dataType()).isComplex)
-        {
-            rv += "C";
-        }
+        for(auto const& op : m_dOps)
+            rv += op.suffix();
 
         return rv;
     }
@@ -1508,6 +1495,7 @@ namespace TensileLite
         TensileLite::TensorDescriptor scaleC("scaleC");
         TensileLite::TensorDescriptor scaleD("scaleD");
         TensileLite::TensorDescriptor scaleAlpha{"scaleAlpha"};
+		TensorOps nop;
 
         // The ContractionProblemGemm
         TensileLite::ContractionProblemGemm problem{

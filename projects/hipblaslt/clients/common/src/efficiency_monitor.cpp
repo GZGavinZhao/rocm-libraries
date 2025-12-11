@@ -138,7 +138,7 @@ public:
         m_smiDeviceIndex = GetAMDSMIIndex(deviceId);
         m_XCDCount       = 1;
 
-#if amd_smi_VERSION_MAJOR >= 25
+#if AMDSMI_LIB_VERSION_MAJOR >= 25
         auto status = amdsmi_get_gpu_xcd_counter(m_processorHandles[m_smiDeviceIndex], &m_XCDCount);
 
         if(status != AMDSMI_STATUS_SUCCESS)
@@ -317,7 +317,7 @@ private:
         m_exit = false;
 
         m_isMultiXCDSupported = false;
-#if amd_smi_VERSION_MAJOR >= 25
+#if AMDSMI_LIB_VERSION_MAJOR >= 25
         m_isMultiXCDSupported = true;
 #endif
 
@@ -367,7 +367,7 @@ private:
         amdsmi_frequencies_t freq;
         do
         {
-#if amd_smi_VERSION_MAJOR >= 25
+#if AMDSMI_LIB_VERSION_MAJOR >= 25
             // multi_XCD
             amdsmi_gpu_metrics_t gpuMetrics;
             auto                 status1
@@ -649,6 +649,7 @@ public:
 #endif
 };
 
-std::unique_ptr<EfficiencyMonitor> EfficiencyMonitor::create() {
-    return std::make_unique<EfficiencyMonitorImp>();
+std::shared_ptr<EfficiencyMonitor> EfficiencyMonitor::create() {
+    static std::shared_ptr<EfficiencyMonitor> instance = std::make_shared<EfficiencyMonitorImp>();
+    return instance;
 }

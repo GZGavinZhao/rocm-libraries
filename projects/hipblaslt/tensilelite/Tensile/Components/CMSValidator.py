@@ -357,6 +357,24 @@ class LocalRead(ValidatorInstruction):
         return message
 
 @dataclass
+class Pack(ValidatorInstruction):
+    name: str
+    num_vmfma: int
+    issued_at: int | float
+    needed_by: float = float('inf')
+    must_start_after: int | float = float('-inf')
+
+    def validate(self) -> str | None:
+        if self.must_start_after < self.issued_at < self.needed_by:
+            return None
+        
+        issued_at = floor(self.issued_at) % self.num_vmfma
+        needed_by = floor(self.needed_by) % self.num_vmfma
+        # TODO: How to handle the case where the Packed is needed by the next iteration?
+        return f"{self.name} at index {issued_at} is not valid. Packed at index {issued_at} is needed by index {needed_by}."
+
+
+@dataclass
 class GlobalRead(ValidatorInstruction):
     name: str
     num_vmfma: int
@@ -549,6 +567,13 @@ class Timeline:
 
                     global_read = GlobalRead(name=name, num_vmfma=self.num_vmfma, issued_at=idx_vmfma, swap_global_read_order=swap_global_read_order)
                     self._insert(idx_vmfma, global_read)
+            elif name.startswith("PackA") or name.startswith("PackB"):
+                packs = schedule_get(name, code_path, schedule_info)
+
+                for idx_pack, idx_vmfma in enumerate(packs):
+                    assert idx_vmfma >= -1, f"Code path {code_path}: Pack {name} at index {idx_pack} is not valid. Must be >= -1."
+                    pack = Pack(name=name, num_vmfma=self.num_vmfma, issued_at=idx_vmfma)
+                    self._insert(idx_vmfma, pack)
             else:
                 raise NotImplementedError(f"Instruction {name} not implemented")
     
@@ -662,6 +687,7 @@ class Timeline:
         """
         Validate the timeline by calling the validate method of each instruction.
         """
+        # Validate each instruction individually
         for loop in self.loops:
             for instruction in self._timelines[loop]:
                 message = instruction.validate()
@@ -669,6 +695,9 @@ class Timeline:
                     if loop in [NO_GLOBAL_LOAD_LOOP, NO_LOCAL_LOAD_LOOP]:
                         message = f"Loop {loop}: {message}"
                     return message
+        
+        # Validate more complicated relationships between instructions
+        # TODO: Packs cannot overlap
         return None
 
     def _apply_barriers(self) -> None:
@@ -744,6 +773,17 @@ class Timeline:
                 _, LR_target = target[0]
                 for _, gr in grs:
                     gr.needed_by = LR_target.issued_at
+
+    def _hook_up_packs(self) -> None:
+        """
+        TODO
+        """
+        # TODO: 1. Find mapping between LR and Pack
+        # TODO: 2. From mapping, updating Pack.needed_by to be the same as the LR.needed_by.
+        #       If multiple LRs, ensure they're  the same.
+        # TODO: 3. From mapping update Pack.must_start_after to be equal to LR.guaranteed_by.
+        #       If multiple for all LRs that map to the same Pack.
+        pass
 
 def schedule_get(name: str, code_path: int, schedule_info: 'ScheduleInfo') -> list[list[int]]:
     """
@@ -960,7 +1000,7 @@ def verify_lrs_and_grs(schedule_info: 'ScheduleInfo', context: dict) -> tuple[bo
             printWarning("LRB3 is present in schedule, but LRB1 is not. This is not yet supported in CMS validation")
             return None
 
-        relevant_names = ["GRA", "GRB", "LRA0", "LRB0", "LRA1", "LRB1", "SYNC"]
+        relevant_names = ["GRA", "GRB", "LRA0", "LRB0", "LRA1", "LRB1", "SYNC", "PackA0", "PackB0", "PackA1", "PackB1"]
         timeline = Timeline(relevant_names, code_path, schedule_info, context["kernel"])
 
         return timeline.validate()

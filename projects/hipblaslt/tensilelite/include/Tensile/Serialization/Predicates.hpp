@@ -135,7 +135,8 @@ namespace TensileLite
         using HardwarePredicateSMT = SubclassMappingTraits<Predicates::Predicate<Hardware>, IO>;
 
         template <typename IO>
-        const typename HardwarePredicateSMT<IO>::SubclassMap SubclassMappingTraits<Predicates::Predicate<Hardware>, IO>::subclasses
+        const typename HardwarePredicateSMT<IO>::SubclassMap
+            SubclassMappingTraits<Predicates::Predicate<Hardware>, IO>::subclasses
             = HardwarePredicateSMT<IO>::GetSubclasses();
 
         template <typename IO>
@@ -178,7 +179,8 @@ namespace TensileLite
         using AMDGPUPredicateSMT = SubclassMappingTraits<Predicates::Predicate<AMDGPU>, IO>;
 
         template <typename IO>
-        const typename AMDGPUPredicateSMT<IO>::SubclassMap SubclassMappingTraits<Predicates::Predicate<AMDGPU>, IO>::subclasses
+        const typename AMDGPUPredicateSMT<IO>::SubclassMap
+            SubclassMappingTraits<Predicates::Predicate<AMDGPU>, IO>::subclasses
             = AMDGPUPredicateSMT<IO>::GetSubclasses();
 
         template <typename IO>
@@ -225,6 +227,8 @@ namespace TensileLite
                 iot::enumCase(io, value, "gfx1103", AMDGPU::Processor::gfx1103);
                 iot::enumCase(io, value, "gfx1150", AMDGPU::Processor::gfx1150);
                 iot::enumCase(io, value, "gfx1151", AMDGPU::Processor::gfx1151);
+                iot::enumCase(io, value, "gfx1152", AMDGPU::Processor::gfx1152);
+                iot::enumCase(io, value, "gfx1153", AMDGPU::Processor::gfx1153);
                 iot::enumCase(io, value, "gfx1200", AMDGPU::Processor::gfx1200);
                 iot::enumCase(io, value, "gfx1201", AMDGPU::Processor::gfx1201);
             }
@@ -249,9 +253,8 @@ namespace TensileLite
 
             static SubclassMap GetSubclasses()
             {
-                SubclassMap rv(
-                    {Base::template Pair<Predicates::Contraction::LaunchLimits>(),
-                     Base::template Pair<Predicates::Contraction::WorkspaceCheck>()});
+                SubclassMap rv({Base::template Pair<Predicates::Contraction::LaunchLimits>(),
+                                Base::template Pair<Predicates::Contraction::WorkspaceCheck>()});
 
                 auto gmap = Generic::GetSubclasses();
                 rv.insert(gmap.begin(), gmap.end());
@@ -264,7 +267,8 @@ namespace TensileLite
         using TaskPredicateSMT = SubclassMappingTraits<Predicates::Predicate<Task>, IO>;
 
         template <typename IO>
-        const typename TaskPredicateSMT<IO>::SubclassMap SubclassMappingTraits<Predicates::Predicate<Task>,IO>::subclasses
+        const typename TaskPredicateSMT<IO>::SubclassMap
+            SubclassMappingTraits<Predicates::Predicate<Task>, IO>::subclasses
             = TaskPredicateSMT<IO>::GetSubclasses();
 
         template <typename IO>

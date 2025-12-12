@@ -13,6 +13,8 @@ set(SUPPORTED_ARCHITECTURES
     "gfx1103"
     "gfx1150"
     "gfx1151"
+    "gfx1152"
+    "gfx1153"
     "gfx1200"
     "gfx1201"
     "gfx908:xnack+"
@@ -20,26 +22,21 @@ set(SUPPORTED_ARCHITECTURES
     "gfx90a:xnack+"
     "gfx90a:xnack-"
     "gfx942:xnack+"
-    "gfx950:xnack+"    
+    "gfx950:xnack+"
 )
 
-# Base architectures - used when "all" is specified for GPU_TARGETS
-# Different base architectures will be chosen depending on the build mode.
-# All base architectures must be in the SUPPORTED_ARCHITECTURES list.
+# Base architectures - used when "all" is specified for GPU_TARGETS Different base architectures
+# will be chosen depending on the build mode. All base architectures must be in the
+# SUPPORTED_ARCHITECTURES list.
 set(BASE_ARCHITECTURES)
 
-# Note:
-# gfx10XX architectures (e.g., gfx1010, gfx1011, gfx1030, etc...) are technically supported by tensilelite,
-# but are NOT included in the default "all" build in hipBLASLt. This is because "extops" builds are not supported
-# for legacy devices. Including these architectures would result in build failures or incomplete feature support.
+# Note: gfx10XX architectures (e.g., gfx1010, gfx1011, gfx1030, etc...) are technically supported by
+# tensilelite, but are NOT included in the default "all" build in hipBLASLt. This is because
+# "extops" builds are not supported for legacy devices. Including these architectures would result
+# in build failures or incomplete feature support.
 if(HIPBLASLT_ENABLE_ASAN OR THEROCK_SANITIZER STREQUAL "ASAN")
-    # For address sanitizer builds, "all" is just the architectures that
-    # support xnack+.
-    set(BASE_ARCHITECTURES
-        "gfx908:xnack+"
-        "gfx90a:xnack+"
-        "gfx942:xnack+"
-        "gfx950:xnack+")
+    # For address sanitizer builds, "all" is just the architectures that support xnack+.
+    set(BASE_ARCHITECTURES "gfx908:xnack+" "gfx90a:xnack+" "gfx942:xnack+" "gfx950:xnack+")
 else()
     # For non address sanitizer builds, "all" is non-xnack architectures.
     set(BASE_ARCHITECTURES
@@ -52,18 +49,21 @@ else()
         "gfx1103"
         "gfx1150"
         "gfx1151"
+        "gfx1152"
+        "gfx1153"
         "gfx1200"
-        "gfx1201")
+        "gfx1201"
+    )
 endif()
 
-# Validate that all BASE_ARCHITECTURES are in the SUPPORTED_ARCHITECTURES list
-# so that we eagerly fail if these ever get out of sync.
+# Validate that all BASE_ARCHITECTURES are in the SUPPORTED_ARCHITECTURES list so that we eagerly
+# fail if these ever get out of sync.
 block()
-    foreach(_arch ${BASE_ARCHITECTURES})
-        if(NOT "${_arch}" IN_LIST SUPPORTED_ARCHITECTURES)
-            message(FATAL_ERROR "Assertion failed: ${_arch} not in SUPPORTED_ARCHITECTURES")
-        endif()
-    endforeach()
+foreach(_arch ${BASE_ARCHITECTURES})
+    if(NOT "${_arch}" IN_LIST SUPPORTED_ARCHITECTURES)
+        message(FATAL_ERROR "Assertion failed: ${_arch} not in SUPPORTED_ARCHITECTURES")
+    endif()
+endforeach()
 endblock()
 
 function(tensilelite_validate_gpu_targets targets)
@@ -79,7 +79,10 @@ function(tensilelite_validate_gpu_targets targets)
     foreach(target IN LISTS target_list)
         list(FIND supported_list "${target}" idx)
         if(idx EQUAL -1)
-            message(FATAL_ERROR "Unsupported GPU target: ${target}\nSupported targets are: ${supported_list}")
+            message(
+                FATAL_ERROR
+                    "Unsupported GPU target: ${target}\nSupported targets are: ${supported_list}"
+            )
         endif()
     endforeach()
 endfunction()

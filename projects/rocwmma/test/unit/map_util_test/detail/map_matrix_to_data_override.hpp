@@ -54,7 +54,7 @@ namespace rocwmma
     public:
         MapMatrixToDataOverrideKernel(decltype(mOverride) overrideContext = OVERRIDE_M)
             : Base()
-            , mOverride(overrideContext){};
+            , mOverride(overrideContext) {};
         virtual ~MapMatrixToDataOverrideKernel() = default;
 
         void setupImpl(typename Base::DataStorage::ProblemSize const& probsize) final
@@ -183,7 +183,7 @@ namespace rocwmma
         waveSize, CASE_IMPL_ASSIGN2, HipDevice::Wave32, HipDevice::Wave64, ARCH_ID)
 
 #define DISPATCH_GUARD_BODY                           \
-    ROCWMMA_SWITCH_BODY11_ARG1(deviceArch,            \
+    ROCWMMA_SWITCH_BODY13_ARG1(deviceArch,            \
                                SWITCH_BODY_WAVE_SIZE, \
                                HipDevice::GFX908,     \
                                HipDevice::GFX90A,     \
@@ -194,6 +194,8 @@ namespace rocwmma
                                HipDevice::GFX1102,    \
                                HipDevice::GFX1150,    \
                                HipDevice::GFX1151,    \
+                               HipDevice::GFX1152,    \
+                               HipDevice::GFX1153,    \
                                HipDevice::GFX1200,    \
                                HipDevice::GFX1201)
 
@@ -219,7 +221,7 @@ namespace rocwmma
 
     public:
         MapMatrixToDataOverrideMKernel()
-            : Base(Base::OVERRIDE_M){};
+            : Base(Base::OVERRIDE_M) {};
         ~MapMatrixToDataOverrideMKernel() final = default;
         typename Base::KernelFunc kernelImpl() const final
         {
@@ -237,7 +239,7 @@ namespace rocwmma
 
     public:
         MapMatrixToDataOverrideNKernel()
-            : Base(Base::OVERRIDE_N){};
+            : Base(Base::OVERRIDE_N) {};
         ~MapMatrixToDataOverrideNKernel() final = default;
         typename Base::KernelFunc kernelImpl() const final
         {

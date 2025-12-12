@@ -204,6 +204,14 @@ namespace TensileLite
             {
                 return AMDGPU::Processor::gfx1151;
             }
+            else if(deviceString.find("gfx1152") != std::string::npos)
+            {
+                return AMDGPU::Processor::gfx1152;
+            }
+            else if(deviceString.find("gfx1153") != std::string::npos)
+            {
+                return AMDGPU::Processor::gfx1153;
+            }
             else if(deviceString.find("gfx1200") != std::string::npos)
             {
                 return AMDGPU::Processor::gfx1200;
@@ -227,9 +235,9 @@ namespace TensileLite
                 device.getInfo<CL_DEVICE_BOARD_NAME_AMD>(), //std::string name;
                 device.getInfo<CL_DEVICE_GLOBAL_MEM_SIZE>(), // size_t totalGlobalMem;
                 device.getInfo<
-                    CL_DEVICE_LOCAL_MEM_SIZE>(), // size_t sharedMemPerBlock; CL_DEVICE_LOCAL_MEM_SIZE
+                              CL_DEVICE_LOCAL_MEM_SIZE>(), // size_t sharedMemPerBlock; CL_DEVICE_LOCAL_MEM_SIZE
                 (int)device.getInfo<
-                    CL_DEVICE_WAVEFRONT_WIDTH_AMD>(), //int warpSize; CL_WARP_SIZE_NV CL_DEVICE_WAVEFRONT_WIDTH_AMD
+                              CL_DEVICE_WAVEFRONT_WIDTH_AMD>(), //int warpSize; CL_WARP_SIZE_NV CL_DEVICE_WAVEFRONT_WIDTH_AMD
                 (int)device.getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE_AMD>(), //int maxThreadsPerBlock;
                 {0, 0, 0}, //int maxThreadsDim[3];
                 {std::numeric_limits<int>::max(),
@@ -238,11 +246,11 @@ namespace TensileLite
                 (int)device.getInfo<CL_DEVICE_MAX_CLOCK_FREQUENCY>()
                     * 1000, //int clockRate; CL_DEVICE_MAX_CLOCK_FREQUENCY
                 (int)device.getInfo<
-                    CL_DEVICE_MAX_COMPUTE_UNITS>(), // int multiProcessorCount; CL_MAX_COMPUTE_UNITS
+                              CL_DEVICE_MAX_COMPUTE_UNITS>(), // int multiProcessorCount; CL_MAX_COMPUTE_UNITS
                 topology.pcie.bus, //int pciBusID; CL_DEVICE_TOPOLOGY_AMD / CL_DEVICE_PCI_BUS_ID_NV
                 topology.pcie.device, // int pciDeviceID;
                 device.getInfo<
-                    CL_DEVICE_LOCAL_MEM_SIZE_PER_COMPUTE_UNIT_AMD>(), //size_t maxSharedMemoryPerMultiProcessor;
+                              CL_DEVICE_LOCAL_MEM_SIZE_PER_COMPUTE_UNIT_AMD>(), //size_t maxSharedMemoryPerMultiProcessor;
                 (int)toProcessorId(device.getInfo<CL_DEVICE_NAME>()) //int gcnArch;
             };
 

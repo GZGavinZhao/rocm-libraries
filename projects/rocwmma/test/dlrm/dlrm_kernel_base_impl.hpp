@@ -108,9 +108,9 @@ namespace rocwmma
         // Arch
         auto isGfx908 = deviceArch == DeviceInfo::GFX908;
         auto isGfx11  = (deviceArch == DeviceInfo::GFX1100) || (deviceArch == DeviceInfo::GFX1101)
-                       || (deviceArch == DeviceInfo::GFX1102)
-                       || (deviceArch == DeviceInfo::GFX1150)
-                       || (deviceArch == DeviceInfo::GFX1151);
+                       || (deviceArch == DeviceInfo::GFX1102) || (deviceArch == DeviceInfo::GFX1150)
+                       || (deviceArch == DeviceInfo::GFX1151) || (deviceArch == DeviceInfo::GFX1152)
+                       || (deviceArch == DeviceInfo::GFX1153);
 
         auto isGfx12 = (deviceArch == DeviceInfo::GFX1200) || (deviceArch == DeviceInfo::GFX1201);
 
@@ -190,17 +190,11 @@ namespace rocwmma
     template <uint32_t TileSize, typename DataT>
     std::ostream& DlrmKernelBase<TileSize, DataT>::printHeader(std::ostream& stream) const
     {
-        return stream << "TileSize, "
-                      << "DataT, "
-                      << "Direction, "
-                      << "MatM, MatK, MatB, "
+        return stream << "TileSize, " << "DataT, " << "Direction, " << "MatM, MatK, MatB, "
 #if ROCWMMA_VALIDATION_TESTS
-                      << "maxRelativeDiff, "
-                      << "tolerance, "
+                      << "maxRelativeDiff, " << "tolerance, "
 #endif // ROCWMMA_VALIDATION_TESTS
-                      << "elapsedMs, "
-                      << "Problem Size(GFlops), "
-                      << "TFlops/s, "
+                      << "elapsedMs, " << "Problem Size(GFlops), " << "TFlops/s, "
                       << "Efficiency(%)" << std::endl;
     }
 

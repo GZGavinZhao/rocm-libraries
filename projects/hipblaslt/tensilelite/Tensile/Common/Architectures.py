@@ -63,6 +63,8 @@ architectureMap = {
     "gfx1103": "gfx1103",
     "gfx1150": "gfx1150",
     "gfx1151": "gfx1151",
+    "gfx1152": "gfx1152",
+    "gfx1153": "gfx1153",
     "gfx1200": "gfx1200",
     "gfx1201": "gfx1201",
 }
@@ -93,6 +95,8 @@ SUPPORTED_ISA = [
     IsaVersion(11, 0, 3),
     IsaVersion(11, 5, 0),
     IsaVersion(11, 5, 1),
+    IsaVersion(11, 5, 2),
+    IsaVersion(11, 5, 3),
     IsaVersion(12, 0, 0),
     IsaVersion(12, 0, 1),
 ]
@@ -222,7 +226,11 @@ def cliArchsToIsa(cliArchs: str) -> List[IsaVersion]:
         List of tuples
     """
     archs = cliArchs.split(";") if ";" in cliArchs else cliArchs.split("_")
-    return SUPPORTED_ISA if "all" in archs else [gfxToIsa(''.join(map(str, arch))) for arch in archs]
+    return (
+        SUPPORTED_ISA
+        if "all" in archs
+        else [gfxToIsa("".join(map(str, arch))) for arch in archs]
+    )
 
 
 def _detectGlobalCurrentISA(detectionTool, deviceId: int):
@@ -239,7 +247,11 @@ def _detectGlobalCurrentISA(detectionTool, deviceId: int):
                 archList.append(arch)
     if process.returncode:
         print(f"{detectionTool} exited with code {process.returncode}")
-    return archList[deviceId] if (len(archList) > 0 and process.returncode == 0) else process.returncode
+    return (
+        archList[deviceId]
+        if (len(archList) > 0 and process.returncode == 0)
+        else process.returncode
+    )
 
 
 def detectGlobalCurrentISA(deviceId: int, enumerator: str):
@@ -362,11 +374,15 @@ def _verifyPredicate(predicateSpec: str, gfx: str) -> str:
         if gfx and SUPPORTED_ARCH_CU_COUNTS[predicateSpec] != gfx:
             raise ValueError(f"{msgPrefix}: CU count is not associated with {gfx}")
     else:
-        raise ValueError(f"{msgPrefix}: only device ID and CU count-based predicates are currently supported")
+        raise ValueError(
+            f"{msgPrefix}: only device ID and CU count-based predicates are currently supported"
+        )
     return predicateSpec
 
 
-def splitArchsFromPredicates(archSpecs: List[str]) -> Tuple[List[str], Optional[Dict[str, List[str]]]]:
+def splitArchsFromPredicates(
+    archSpecs: List[str],
+) -> Tuple[List[str], Optional[Dict[str, List[str]]]]:
     """
     Splits a list of architecture specifications into architectures and their predicates.
 
@@ -396,7 +412,7 @@ def splitArchsFromPredicates(archSpecs: List[str]) -> Tuple[List[str], Optional[
 
         match = re.search(pattern, spec)
         if match:
-            arch = spec[:match.start()].strip()
+            arch = spec[: match.start()].strip()
             predicates = [p.strip().lower() for p in match.group(1).split(",")]
             predicateMap[arch].extend(_verifyPredicate(p, arch) for p in predicates)
 
@@ -463,11 +479,14 @@ def _populateVariantMap(
         if v in ARCH_DEVICE_ID_FALLBACKS
         for fallbackId in ARCH_DEVICE_ID_FALLBACKS[v]
     }
-    fallbackCUs = {ARCH_CU_COUNT_FALLBACKS[v] for v in requestedCUs if v in ARCH_CU_COUNT_FALLBACKS}
+    fallbackCUs = {
+        ARCH_CU_COUNT_FALLBACKS[v] for v in requestedCUs if v in ARCH_CU_COUNT_FALLBACKS
+    }
 
     isCuFallback = not requestedCUs or archinfo.CUCount in fallbackCUs
     isDevIdFallback = not requestedDevIds or (
-        archinfo.DeviceIds and any(fallbackId in archinfo.DeviceIds for fallbackId in fallbackDevIds)
+        archinfo.DeviceIds
+        and any(fallbackId in archinfo.DeviceIds for fallbackId in fallbackDevIds)
     )
 
     if isCuFallback and isDevIdFallback:
@@ -517,7 +536,9 @@ def filterLogicFilesByPredicates(
     fallbackKey = "fallback"
     # A `spec` here is a variant specification passed via the command line, e.g., "cu=64"
     # This is how the code differentiates variants of the same gfx, as well as "fallback" files
-    variantMap = {gfx: {spec: set() for spec in specs} for gfx, specs in variants.items()}
+    variantMap = {
+        gfx: {spec: set() for spec in specs} for gfx, specs in variants.items()
+    }
     for file in variantMap.values():
         file[fallbackKey] = set()
 

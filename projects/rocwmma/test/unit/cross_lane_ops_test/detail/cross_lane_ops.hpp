@@ -77,7 +77,9 @@ namespace rocwmma
                             || deviceArch == Base::DeviceInfo::GFX1101
                             || deviceArch == Base::DeviceInfo::GFX1102
                             || deviceArch == Base::DeviceInfo::GFX1150
-                            || deviceArch == Base::DeviceInfo::GFX1151);
+                            || deviceArch == Base::DeviceInfo::GFX1151
+                            || deviceArch == Base::DeviceInfo::GFX1152
+                            || deviceArch == Base::DeviceInfo::GFX1153);
 
             bool isGfx12 = (deviceArch == Base::DeviceInfo::GFX1200)
                            || (deviceArch == Base::DeviceInfo::GFX1201);
@@ -105,15 +107,9 @@ namespace rocwmma
 
         std::ostream& printHeader(std::ostream& stream = std::cout) const final
         {
-            return stream << "DataT,"
-                          << "Op_Id, "
-                          << "Op_Impl, "
-                          << "Wave_Size, "
-                          << "Group_Size, "
-                          << "WriteRowMask, "
-                          << "WriteBankMask, "
-                          << "BoundCtrl, "
-                          << "Result" << std::endl;
+            return stream << "DataT," << "Op_Id, " << "Op_Impl, " << "Wave_Size, " << "Group_Size, "
+                          << "WriteRowMask, " << "WriteBankMask, " << "BoundCtrl, " << "Result"
+                          << std::endl;
         }
         std::ostream& printKernel(std::ostream& stream = std::cout) const final
         {

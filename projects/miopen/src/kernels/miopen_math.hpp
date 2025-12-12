@@ -26,10 +26,12 @@
 
 #pragma once
 
+#ifndef MIOPEN_DONT_USE_HIP_RUNTIME_HEADERS
+#include <hip/hip_bf16.h>
+#include <hip/hip_fp16.h>
+#endif
+
 #include "vector_types.hpp"
-#ifdef __HIP_PLATFORM_AMD__
-#include <hip/amd_detail/amd_hip_fp16.h>
-#include <hip/amd_detail/amd_hip_bf16.h>
 
 namespace miopen {
 namespace detail {
@@ -37,6 +39,7 @@ namespace detail {
 //=============================================================================
 // Float overloads
 //=============================================================================
+
 __forceinline__ __device__ float exp(float x) { return expf(x); }
 __forceinline__ __device__ float log(float x) { return logf(x); }
 __forceinline__ __device__ float sqrt(float x) { return sqrtf(x); }
@@ -55,38 +58,29 @@ __forceinline__ __device__ float fma(float a, float b, float c) { return ::fma(a
 // Half precision overloads
 //=============================================================================
 
-__forceinline__ __device__ _Float16 exp(_Float16 x) { return hexp(__half(x)); }
-__forceinline__ __device__ _Float16 log(_Float16 x) { return hlog(__half(x)); }
-__forceinline__ __device__ _Float16 sqrt(_Float16 x) { return hsqrt(__half(x)); }
-__forceinline__ __device__ _Float16 rsqrt(_Float16 x) { return hrsqrt(__half(x)); }
+__forceinline__ __device__ _Float16 exp(_Float16 x) { return __ocml_exp_f16(x); }
+__forceinline__ __device__ _Float16 log(_Float16 x) { return __ocml_log_f16(x); }
+__forceinline__ __device__ _Float16 sqrt(_Float16 x) { return __ocml_sqrt_f16(x); }
+__forceinline__ __device__ _Float16 rsqrt(_Float16 x) { return __ocml_rsqrt_f16(x); }
 __forceinline__ __device__ _Float16 sin(_Float16 x) { return hsin(__half(x)); }
 __forceinline__ __device__ _Float16 cos(_Float16 x) { return hcos(__half(x)); }
-__forceinline__ __device__ _Float16 fabs(_Float16 x) { return __habs(__half(x)); }
-__forceinline__ __device__ _Float16 fmax(_Float16 x, _Float16 y)
-{
-    return fmax(static_cast<float>(x), static_cast<float>(y));
-}
-__forceinline__ __device__ _Float16 fmin(_Float16 x, _Float16 y)
-{
-    return fmin(static_cast<float>(x), static_cast<float>(y));
-}
-
+__forceinline__ __device__ _Float16 fabs(_Float16 x) { return __ocml_fabs_f16(x); }
+__forceinline__ __device__ _Float16 fmin(_Float16 x, _Float16 y) { return __ocml_fmin_f16(x, y); }
+__forceinline__ __device__ _Float16 fmax(_Float16 x, _Float16 y) { return __ocml_fmax_f16(x, y); }
 __forceinline__ __device__ _Float16 pow(_Float16 x, _Float16 y)
 {
-    return hexp(__hmul(__half(y), hlog(__half(x))));
-}
-__forceinline__ __device__ _Float16 tan(_Float16 x)
-{
-    __half h = __half(x);
-    return __hdiv(hsin(h), hcos(h));
+    return __ocml_exp_f16(y * __ocml_log_f16(x));
 }
 __forceinline__ __device__ _Float16 tanh(_Float16 x)
 {
-    __half h           = __half(x);
-    __half exp2x       = hexp(__hmul(__half(2.0f), h));
-    __half numerator   = __hsub(exp2x, __half(1.0f));
-    __half denominator = __hadd(exp2x, __half(1.0f));
-    return __hdiv(numerator, denominator);
+    float x_scaled = static_cast<float>(x) * 1.4426950408889634f; // 0x1.715476p+0f = log2(e)
+    float a        = __builtin_amdgcn_exp2f(x_scaled);
+    float b        = __builtin_amdgcn_exp2f(-x_scaled);
+
+    _Float16 ret = static_cast<_Float16>((a - b) * __builtin_amdgcn_rcpf(a + b));
+    _Float16 one = __builtin_copysignf(1.0f, x);
+
+    return __ocml_fabs_f16(x) > 4.5f ? one : ret;
 }
 
 __forceinline__ __device__ _Float16 fma(_Float16 a, _Float16 b, _Float16 c)
@@ -187,10 +181,6 @@ __forceinline__ __device__ double fmin(double x, double y) { return ::fmin(x, y)
 __forceinline__ __device__ double fma(double a, double b, double c) { return ::fma(a, b, c); }
 
 } // namespace detail
-
-//=============================================================================
-// 2-element vector overloads
-//=============================================================================
 
 template <typename FpVecType>
 __forceinline__ __device__ FpVecType exp(FpVecType x)
@@ -295,13 +285,6 @@ __forceinline__ __device__ FpVecType fma(FpVecType a, FpVecType b, FpVecType c)
         out.y = detail::fma(a.y, b.y, c.y);
         out.z = detail::fma(a.z, b.z, c.z);
         out.w = detail::fma(a.w, b.w, c.w);
-        return out;
-    }
-    else if constexpr(VecSize == 2)
-    {
-        FpVecType out;
-        out.x = detail::fma(a.x, b.x, c.x);
-        out.y = detail::fma(a.y, b.y, c.y);
         return out;
     }
     else if constexpr(VecSize == 1)
@@ -442,5 +425,3 @@ __forceinline__ __device__ FpVecType fabs(FpVecType x)
 }
 
 } // namespace miopen
-
-#endif // __HIP_PLATFORM_AMD__

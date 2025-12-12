@@ -164,7 +164,7 @@ double arithmetic_intensity(double m, double n, double k, double bytes_per_eleme
   double numerator   = 2.0 * m * n * k;
   double denominator = (m * n + n * k + m * k) * bytes_per_element;
 
-  if(denominator == 0) return 0.0;
+  if (denominator == 0) return 0.0;
   return numerator / denominator;
 }
 
@@ -175,7 +175,7 @@ double emulated_tf32_arithmetic_intensity(double m, double n, double k, double b
   double numerator   = 3.0 * 2.0 * m * n * k;
   double denominator = (m * n + n * k + m * k) * bytes_per_element;
 
-  if(denominator == 0) return 0.0;
+  if (denominator == 0) return 0.0;
   return numerator / denominator;
 }
 
@@ -254,8 +254,8 @@ static inline double compute_cvt_overhead_x1(const problem_t& problem,
 
 // Compute cvt overhead in tf32 emulation
 double compute_cvt_overhead(const problem_t& problem,
-                                          const hardware_t& hardware,
-                                          const config_t& config) {
+                            const hardware_t& hardware,
+                            const config_t& config) {
   // Wave tile sizes
   // TODO: Use kernel's actual wavetiles.
   const double wave_tile_m = config.mt.m / 2.0;

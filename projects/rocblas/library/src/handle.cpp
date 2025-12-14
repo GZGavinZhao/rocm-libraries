@@ -366,14 +366,6 @@ Processor _rocblas_handle::getActiveArch()
     {
         return Processor::gfx1010;
     }
-    else if(deviceString.find("gfx1011") != std::string::npos)
-    {
-        return Processor::gfx1011;
-    }
-    else if(deviceString.find("gfx1012") != std::string::npos)
-    {
-        return Processor::gfx1012;
-    }
     else if(deviceString.find("gfx1030") != std::string::npos)
     {
         return Processor::gfx1030;
@@ -406,6 +398,29 @@ Processor _rocblas_handle::getActiveArch()
     {
         return Processor::gfx1201;
     }
+
+    size_t pos = std::string::npos;
+    if((pos = deviceString.find("gfx103")) != std::string::npos)
+    {
+        return Processor::gfx1030;
+    }
+    else if((pos = deviceString.find("gfx101")) != std::string::npos)
+    {
+        return Processor::gfx1010;
+    }
+    else if((pos = deviceString.find("gfx90")) != std::string::npos)
+    {
+        constexpr int cmpIdx = std::char_traits<char>::length("gfx90");
+        if(pos + cmpIdx < deviceString.size())
+        {
+            if(deviceString.at(pos + cmpIdx) == '2' || deviceString.at(pos + cmpIdx) == '9'
+               || deviceString.at(pos + cmpIdx) == 'c')
+            {
+                return Processor::gfx900;
+            }
+        }
+    }
+
     return static_cast<Processor>(0);
 }
 

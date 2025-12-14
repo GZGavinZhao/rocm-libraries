@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include <string>
 #include <thread>
 
 #ifndef WIN32
@@ -32,6 +33,14 @@
 // return std::thread::hardware_concurrency().
 static unsigned int rocfft_concurrency()
 {
+	const char* env_concurrency = std::getenv("ROCFFT_CONCURRENCY");
+	if (env_concurrency)
+	{
+		try {
+			return (unsigned int)(std::stoi(env_concurrency));
+		} catch (...) {}
+	}
+
 #ifndef WIN32
     cpu_set_t cpuset;
     if(sched_getaffinity(0, sizeof(cpuset), &cpuset) == 0)

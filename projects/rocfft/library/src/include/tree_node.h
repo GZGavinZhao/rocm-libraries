@@ -84,6 +84,33 @@ struct GridParam
     }
 };
 
+static bool is_device_gcn_arch(const hipDeviceProp_t& prop, const std::string& cmpTarget)
+{
+    std::string archName(prop.gcnArchName);
+
+    if (cmpTarget == "gfx1030" && archName.find("gfx103") != std::string::npos)
+    {
+        return true;
+    }
+    else if (cmpTarget == "gfx1010" && archName.find("gfx101") != std::string::npos)
+    {
+        return true;
+    }
+    else if (cmpTarget == "gfx900")
+    {
+        auto pos = archName.find("gfx90");
+        const auto cmpIdx = cmpTarget.size() - 1;
+        if (pos != std::string::npos && pos + cmpIdx < archName.size())
+        {
+            return archName.at(pos + cmpIdx) == '0' || archName.at(pos + cmpIdx) == '2' || archName.at(pos + cmpIdx) == '9' || archName.at(pos + cmpIdx) == 'c';
+        }
+    }
+    else
+    {
+        return archName.find(cmpTarget) != std::string::npos;
+    }
+}
+
 // get the arch name, as a part of key of solution map
 static std::string get_arch_name(const hipDeviceProp_t& prop)
 {
@@ -101,22 +128,15 @@ static std::string get_arch_name(const hipDeviceProp_t& prop)
                                                        "gfx1201"};
 
     static const std::string anyArch("any");
-    std::string              archName(prop.gcnArchName);
 
     for(const auto& arch : arch_list)
     {
-        if(archName.find(arch) != std::string::npos)
+        if(is_device_gcn_arch(prop, arch))
             return arch;
     }
 
     // kind of a fall-back solution
     return anyArch;
-}
-
-static bool is_device_gcn_arch(const hipDeviceProp_t& prop, const std::string& cmpTarget)
-{
-    std::string archName(prop.gcnArchName);
-    return archName.find(cmpTarget) != std::string::npos;
 }
 
 static bool is_diagonal_sbrc_3D_length(size_t len)

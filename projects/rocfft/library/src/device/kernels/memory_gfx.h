@@ -44,7 +44,7 @@
     || defined(__gfx942__) // test device
 #define USE_GFX_BUFFER_INTRINSIC
 #define BUFFER_RESOURCE_3RD_DWORD 0x00020000
-#elif defined(__gfx1030__) // special device
+#elif defined(__gfx1010__) || defined(__gfx1030__) // special device
 #define USE_GFX_BUFFER_INTRINSIC
 #define BUFFER_RESOURCE_3RD_DWORD 0x31014000
 #else // not support

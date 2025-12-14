@@ -269,14 +269,6 @@ namespace
         {
             return Tensile::LazyLoadingInit::gfx1010;
         }
-        else if(deviceString.find("gfx1011") != std::string::npos)
-        {
-            return Tensile::LazyLoadingInit::gfx1011;
-        }
-        else if(deviceString.find("gfx1012") != std::string::npos)
-        {
-            return Tensile::LazyLoadingInit::gfx1012;
-        }
         else if(deviceString.find("gfx1030") != std::string::npos)
         {
             return Tensile::LazyLoadingInit::gfx1030;
@@ -329,6 +321,29 @@ namespace
         {
             return Tensile::LazyLoadingInit::gfx1201;
         }
+
+        size_t pos = std::string::npos;
+        if((pos = deviceString.find("gfx103")) != std::string::npos)
+        {
+            return Tensile::LazyLoadingInit::gfx1030;
+        }
+        else if((pos = deviceString.find("gfx101")) != std::string::npos)
+        {
+            return Tensile::LazyLoadingInit::gfx1010;
+        }
+        else if((pos = deviceString.find("gfx90")) != std::string::npos)
+        {
+            constexpr int cmpIdx = std::char_traits<char>::length("gfx90");
+            if(pos + cmpIdx < deviceString.size())
+            {
+                if(deviceString.at(pos + cmpIdx) == '2' || deviceString.at(pos + cmpIdx) == '9'
+                   || deviceString.at(pos + cmpIdx) == 'c')
+                {
+                    return Tensile::LazyLoadingInit::gfx900;
+                }
+            }
+        }
+
         return Tensile::LazyLoadingInit::None;
     }
 
@@ -860,9 +875,10 @@ namespace
                         //populate device property map, used in finding solutions based on arch
                         HIP_CHECK_EXC(hipGetDeviceProperties(&prop, devId));
                         // strip out xnack/ecc from name
-                        std::string deviceFullString(prop.gcnArchName);
+                        std::string deviceFullString = rocblas_internal_get_arch_name();
                         std::string deviceString
                             = deviceFullString.substr(0, deviceFullString.find(":"));
+                        std::strcpy(prop.gcnArchName, deviceFullString.c_str());
                         m_devicePropMap[deviceString] = std::make_shared<hipDeviceProp_t>(prop);
                     }
                 }

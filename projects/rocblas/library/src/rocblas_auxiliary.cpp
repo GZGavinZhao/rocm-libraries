@@ -909,11 +909,7 @@ bool rocblas_internal_tensile_supports_ldc_ne_ldd(rocblas_handle handle)
 
 bool rocblas_internal_tensile_supports_xdl_math_op(rocblas_math_mode mode)
 {
-    int deviceId;
-    hipGetDevice(&deviceId);
-    hipDeviceProp_t deviceProperties;
-    hipGetDeviceProperties(&deviceProperties, deviceId);
-    std::string deviceString(deviceProperties.gcnArchName);
+    std::string deviceString = rocblas_internal_get_arch_name();
     return (deviceString.find("gfx942") != std::string::npos);
 }
 
@@ -924,6 +920,31 @@ std::string rocblas_internal_get_arch_name()
     hipGetDevice(&deviceId);
     hipDeviceProp_t deviceProperties;
     hipGetDeviceProperties(&deviceProperties, deviceId);
+
+    // coerce arch name
+    std::string archName(deviceProperties.gcnArchName);
+    size_t      pos = std::string::npos;
+    if((pos = archName.find("gfx103")) != std::string::npos)
+    {
+        std::strcpy(deviceProperties.gcnArchName, "gfx1030");
+    }
+    else if((pos = archName.find("gfx101")) != std::string::npos)
+    {
+        std::strcpy(deviceProperties.gcnArchName, "gfx1010");
+    }
+    else if((pos = archName.find("gfx90")) != std::string::npos)
+    {
+        constexpr int cmpIdx = std::char_traits<char>::length("gfx90");
+        if(pos + cmpIdx < archName.size())
+        {
+            if(archName.at(pos + cmpIdx) == '2' || archName.at(pos + cmpIdx) == '9'
+               || archName.at(pos + cmpIdx) == 'c')
+            {
+                std::strcpy(deviceProperties.gcnArchName, "gfx900");
+            }
+        }
+    }
+
     return ArchName<hipDeviceProp_t>{}(deviceProperties);
 }
 

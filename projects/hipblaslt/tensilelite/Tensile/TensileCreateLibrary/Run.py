@@ -83,7 +83,6 @@ class KernelCodeGenResult(NamedTuple):
     src: str
     header: Optional[str]
     name: str
-    targetObjFilename: str
     isa: IsaVersion
     wavefrontSize: int
     cuoccupancy: int
@@ -106,10 +105,9 @@ def processKernelSource(kernelWriterAssembly, data, outOptions, splitGSU, kernel
     asmFilename = getKernelFileBase(splitGSU, kernel)
     err, src = kernelWriter.getSourceFileString(kernel)
     header = kernelWriter.getHeaderFileString(kernel)
-    objFilename = kernel._state.get("codeObjectFile", None)
     pgr = int(kernel["PrefetchGlobalRead"])
     return KernelCodeGenResult(
-        err, src, header, asmFilename, objFilename, tuple(kernel["ISA"]), \
+        err, src, header, asmFilename, tuple(kernel["ISA"]), \
         kernel["WavefrontSize"], kernel["CUOccupancy"], \
         pgr, kernel["MathClocksUnrolledLoop"]
     )

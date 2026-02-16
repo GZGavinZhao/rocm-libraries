@@ -360,6 +360,7 @@ if(CK_DEVICE_OTHER_INSTANCES AND NOT MIOPEN_REQ_LIBS_ONLY)
             PROPERTIES
             VERSION ${CMAKE_PROJECT_VERSION}
             SOVERSION ${CMAKE_PROJECT_VERSION_MAJOR}
+            OUTPUT_NAME ck_device_other_operations
         )
         target_include_directories(device_other_operations PUBLIC
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/ck>
@@ -397,6 +398,7 @@ if(CK_DEVICE_GEMM_INSTANCES AND NOT MIOPEN_REQ_LIBS_ONLY)
             PROPERTIES
             VERSION ${CMAKE_PROJECT_VERSION}
             SOVERSION ${CMAKE_PROJECT_VERSION_MAJOR}
+            OUTPUT_NAME ck_device_gemm_operations
         )
         target_include_directories(device_gemm_operations PUBLIC
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/ck/library/tensor_operation_instance/gpu>
@@ -418,6 +420,7 @@ if(CK_DEVICE_CONV_INSTANCES)
             PROPERTIES
             VERSION ${CMAKE_PROJECT_VERSION}
             SOVERSION ${CMAKE_PROJECT_VERSION_MAJOR}
+            OUTPUT_NAME ck_device_conv_operations
         )
         target_include_directories(device_conv_operations PUBLIC
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/ck/library/tensor_operation_instance/gpu>
@@ -442,6 +445,7 @@ if(CK_DEVICE_MHA_INSTANCES AND NOT MIOPEN_REQ_LIBS_ONLY AND BUILD_MHA_LIB)
                 PROPERTIES
                 VERSION ${CMAKE_PROJECT_VERSION}
                 SOVERSION ${CMAKE_PROJECT_VERSION_MAJOR}
+                OUTPUT_NAME ck_device_mha_operations
             )
             add_library(composablekernels::device_mha_operations ALIAS device_mha_operations)
             target_compile_features(device_mha_operations PUBLIC)
@@ -465,6 +469,7 @@ if(CK_DEVICE_CONTRACTION_INSTANCES AND NOT MIOPEN_REQ_LIBS_ONLY)
             PROPERTIES
             VERSION ${CMAKE_PROJECT_VERSION}
             SOVERSION ${CMAKE_PROJECT_VERSION_MAJOR}
+            OUTPUT_NAME ck_device_contraction_operations
         )
         target_include_directories(device_contraction_operations PUBLIC
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/ck/library/tensor_operation_instance/gpu>
@@ -487,6 +492,7 @@ if(CK_DEVICE_REDUCTION_INSTANCES AND NOT MIOPEN_REQ_LIBS_ONLY)
             PROPERTIES
             VERSION ${CMAKE_PROJECT_VERSION}
             SOVERSION ${CMAKE_PROJECT_VERSION_MAJOR}
+            OUTPUT_NAME ck_device_reduction_operations
         )
         target_include_directories(device_reduction_operations PUBLIC
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/ck/library/tensor_operation_instance/gpu/reduce>

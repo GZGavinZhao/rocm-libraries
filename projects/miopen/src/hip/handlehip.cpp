@@ -227,8 +227,32 @@ struct HandleImpl
     {
         hipDeviceProp_t props{};
         hipGetDeviceProperties(&props, device);
-        const std::string name(props.gcnArchName);
+        std::string name(props.gcnArchName);
         MIOPEN_LOG_NQI("Raw device name: " << name);
+
+        // coerce device name
+        size_t loc = std::string::npos;
+        if((loc = name.find("gfx103")) != std::string::npos)
+        {
+            size_t offset = std::char_traits<char>::length("gfx103");
+            name.at(loc + offset) = '0';
+        }
+        else if((loc = name.find("gfx101")) != std::string::npos)
+        {
+            size_t offset = std::char_traits<char>::length("gfx101");
+            name.at(loc + offset) = '0';
+        }
+        else if((loc = name.find("gfx90")) != std::string::npos)
+        {
+            size_t offset = std::char_traits<char>::length("gfx90");
+            char ver = name.at(loc + offset);
+            if (ver == '2' || ver == '6' || ver == '9' || ver == 'c')
+            {
+                name.at(loc + offset) = '0';
+            }
+        }
+
+        MIOPEN_LOG_NQI("Coerced device name: " << name);
         return name; // NOLINT (performance-no-automatic-move)
     }
 
